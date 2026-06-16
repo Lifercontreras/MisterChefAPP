@@ -148,7 +148,7 @@ class _LoginFormState extends State<_LoginForm> {
     setState(() => _isLoading = true);
     try {
       final res = await _authService.login(
-        _emailCtrl.text.trim(), _passCtrl.text.trim());
+          _emailCtrl.text.trim(), _passCtrl.text.trim());
       if (!mounted) return;
       final firstLogin = res['employee']?['first_login'] as bool? ?? false;
       if (firstLogin) {
@@ -157,7 +157,11 @@ class _LoginFormState extends State<_LoginForm> {
         Navigator.pushReplacementNamed(context, AppRoutes.home);
       }
     } on ApiException catch (e) {
-      _showError(e.message);
+      if (e.statusCode == 401) {
+        _showError('Contraseña incorrecta. Verifica tus datos.');
+      } else {
+        _showError(e.message);
+      }
     } catch (_) {
       _showError('Error al iniciar sesión. Intenta de nuevo.');
     } finally {
@@ -167,9 +171,16 @@ class _LoginFormState extends State<_LoginForm> {
 
   void _showError(String msg) {
     ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
+      content: Row(
+        children: [
+          const Icon(Icons.error_outline, color: Colors.white, size: 18),
+          const SizedBox(width: 8),
+          Expanded(child: Text(msg, style: const TextStyle(fontSize: 13))),
+        ],
+      ),
       backgroundColor: AppColors.statusError,
       behavior: SnackBarBehavior.floating,
+      duration: const Duration(seconds: 3),
     ));
   }
 

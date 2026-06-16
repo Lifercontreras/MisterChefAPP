@@ -149,6 +149,20 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
           padding: const EdgeInsets.fromLTRB(16, 12, 16, 14),
           child: Row(
             children: [
+              // ← botón volver agregado
+              GestureDetector(
+                onTap: () => Navigator.pop(context),
+                child: Container(
+                  width: 36, height: 36,
+                  decoration: BoxDecoration(
+                    color: Colors.white.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                  child: const Icon(Icons.arrow_back,
+                      color: Colors.white, size: 18),
+                ),
+              ),
+              const SizedBox(width: 12),
               Container(
                 width: 38, height: 38,
                 decoration: BoxDecoration(

@@ -170,35 +170,10 @@ class _OrdersScreenState extends State<OrdersScreen> {
                 children: [
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 12, 16, 10),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: [
-                        const Text('Mis pedidos',
-                            style: TextStyle(fontSize: 18,
-                                fontWeight: FontWeight.w500,
-                                color: Colors.white)),
-                        GestureDetector(
-                          onTap: () async {
-                            await Navigator.push(context,
-                                MaterialPageRoute(
-                                    builder: (_) => const NewOrderScreen()));
-                            _loadOrders();
-                          },
-                          child: Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 14, vertical: 7),
-                            decoration: BoxDecoration(
-                              color: Colors.white.withOpacity(0.2),
-                              borderRadius: BorderRadius.circular(8),
-                            ),
-                            child: const Text('+ Nuevo',
-                                style: TextStyle(fontSize: 12,
-                                    fontWeight: FontWeight.w500,
-                                    color: Colors.white)),
-                          ),
-                        ),
-                      ],
-                    ),
+                    child: const Text('Mis pedidos',
+                        style: TextStyle(fontSize: 18,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white)),
                   ),
                   Padding(
                     padding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
@@ -209,11 +184,20 @@ class _OrdersScreenState extends State<OrdersScreen> {
                       ),
                       child: TextField(
                         controller: _searchCtrl,
-                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? Colors.white
+                              : Colors.black87,
+                        ),
                         decoration: InputDecoration(
                           hintText: 'Buscar pedido o cliente...',
                           hintStyle: TextStyle(
-                              color: Colors.white.withOpacity(0.6), fontSize: 13),
+                            fontSize: 13,
+                            color: Theme.of(context).brightness == Brightness.dark
+                                ? Colors.white.withOpacity(0.6)
+                                : Colors.black54,
+                          ),
                           prefixIcon: Icon(Icons.search,
                               color: Colors.white.withOpacity(0.7), size: 20),
                           border: InputBorder.none,

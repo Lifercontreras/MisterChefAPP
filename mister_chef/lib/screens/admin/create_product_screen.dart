@@ -4,7 +4,7 @@ import '../../services/product_service.dart';
 import '../../services/api_service.dart';
 
 class CreateProductScreen extends StatefulWidget {
-  final Map<String, dynamic>? product; // null = crear, not null = editar
+  final Map<String, dynamic>? product;
 
   const CreateProductScreen({super.key, this.product});
 
@@ -63,9 +63,9 @@ class _CreateProductScreenState extends State<CreateProductScreen> {
     setState(() => _isSaving = true);
     try {
       final data = {
-        'product_name':  _nameCtrl.text.trim(),
-        'selling_price': double.tryParse(_priceCtrl.text.trim()) ?? 0.0,
-        'minimun_stock': int.tryParse(_minStockCtrl.text.trim()) ?? 0,
+        'product_name':   _nameCtrl.text.trim(),
+        'selling_price':  double.tryParse(_priceCtrl.text.trim()) ?? 0.0,
+        'minimun_stock':  int.tryParse(_minStockCtrl.text.trim()) ?? 0,
         'id_produc_type': _selectedType,
       };
 
@@ -75,7 +75,6 @@ class _CreateProductScreenState extends State<CreateProductScreen> {
       } else {
         data['stock']  = int.tryParse(_stockCtrl.text.trim()) ?? 0;
         data['status'] = true;
-        debugPrint('DATOS A ENVIAR: $data');
         await _productService.createProduct(data);
       }
 
@@ -116,8 +115,10 @@ class _CreateProductScreenState extends State<CreateProductScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs = AppColorScheme.of(context); // ← agregado
+
     return Scaffold(
-      backgroundColor: AppColors.surfaceLight,
+      backgroundColor: cs.surface, // ← cambiado
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         leading: IconButton(
@@ -145,37 +146,52 @@ class _CreateProductScreenState extends State<CreateProductScreen> {
                             title: 'Información del producto',
                             icon: Icons.inventory_2_outlined,
                             children: [
-                              _field(_nameCtrl, 'Nombre del producto *',
-                                  'Pimienta negra', required: true),
+                              _field(context, _nameCtrl,
+                                  'Nombre del producto *', 'Pimienta negra',
+                                  required: true),
                               const SizedBox(height: 12),
-                              _field(_priceCtrl, 'Precio de venta *', '5000',
-                                  keyboard: TextInputType.number, required: true),
+                              _field(context, _priceCtrl,
+                                  'Precio de venta *', '5000',
+                                  keyboard: TextInputType.number,
+                                  required: true),
                               const SizedBox(height: 12),
                               if (!_isEditing) ...[
-                                _field(_stockCtrl, 'Stock inicial *', '100',
-                                    keyboard: TextInputType.number, required: true),
+                                _field(context, _stockCtrl,
+                                    'Stock inicial *', '100',
+                                    keyboard: TextInputType.number,
+                                    required: true),
                                 const SizedBox(height: 12),
                               ],
-                              _field(_minStockCtrl, 'Stock mínimo *', '10',
-                                  keyboard: TextInputType.number, required: true),
+                              _field(context, _minStockCtrl,
+                                  'Stock mínimo *', '10',
+                                  keyboard: TextInputType.number,
+                                  required: true),
                               const SizedBox(height: 12),
                               _FieldLabel(label: 'Tipo de producto *'),
                               const SizedBox(height: 6),
                               DropdownButtonFormField<String>(
                                 value: _selectedType,
-                                decoration: _dropdownDeco(),
-                                hint: const Text('Selecciona un tipo',
+                                dropdownColor: cs.card, // ← cambiado
+                                decoration: _dropdownDeco(cs),
+                                hint: Text('Selecciona un tipo',
                                     style: TextStyle(fontSize: 13,
-                                        color: AppColors.textHintLight)),
+                                        color: cs.textHint)), // ← cambiado
                                 items: _types.map((t) => DropdownMenuItem(
                                   value: t['id_produc_type'].toString(),
                                   child: Text(t['type'] ?? '',
-                                      style: const TextStyle(fontSize: 13)),
+                                      style: TextStyle(
+                                          fontSize: 13,
+                                          color: cs.textPrimary)), // ← cambiado
                                 )).toList(),
                                 onChanged: (v) =>
                                     setState(() => _selectedType = v),
-                                validator: (v) => v == null
-                                    ? 'Selecciona un tipo' : null,
+                                validator: (v) =>
+                                    v == null ? 'Selecciona un tipo' : null,
+                                style: TextStyle(
+                                    fontSize: 13,
+                                    color: cs.textPrimary), // ← cambiado
+                                icon: Icon(Icons.keyboard_arrow_down,
+                                    color: cs.textHint), // ← cambiado
                               ),
                             ],
                           ),
@@ -183,12 +199,13 @@ class _CreateProductScreenState extends State<CreateProductScreen> {
                       ),
                     ),
                   ),
+
+                  // ── Botón guardar
                   Container(
                     padding: const EdgeInsets.all(16),
-                    decoration: const BoxDecoration(
-                      color: Colors.white,
-                      border: Border(top: BorderSide(
-                          color: AppColors.borderLight)),
+                    decoration: BoxDecoration(
+                      color: cs.card, // ← cambiado
+                      border: Border(top: BorderSide(color: cs.border)), // ← cambiado
                     ),
                     child: SizedBox(
                       width: double.infinity,
@@ -207,9 +224,7 @@ class _CreateProductScreenState extends State<CreateProductScreen> {
                                 child: CircularProgressIndicator(
                                     color: Colors.white, strokeWidth: 2))
                             : Text(
-                                _isEditing
-                                    ? 'Guardar cambios'
-                                    : 'Crear producto',
+                                _isEditing ? 'Guardar cambios' : 'Crear producto',
                                 style: const TextStyle(fontSize: 15,
                                     fontWeight: FontWeight.w500)),
                       ),
@@ -221,8 +236,10 @@ class _CreateProductScreenState extends State<CreateProductScreen> {
     );
   }
 
-  Widget _field(TextEditingController ctrl, String label, String hint,
+  Widget _field(BuildContext context, TextEditingController ctrl,
+      String label, String hint,
       {TextInputType? keyboard, bool required = false}) {
+    final cs = AppColorScheme.of(context); // ← agregado
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -231,51 +248,58 @@ class _CreateProductScreenState extends State<CreateProductScreen> {
         TextFormField(
           controller: ctrl,
           keyboardType: keyboard,
-          style: const TextStyle(fontSize: 13,
-              color: AppColors.textPrimaryLight),
+          style: TextStyle(fontSize: 13, color: cs.textPrimary), // ← cambiado
           validator: required
               ? (v) => (v == null || v.isEmpty) ? 'Campo requerido' : null
               : null,
           decoration: InputDecoration(
             hintText: hint,
-            hintStyle: const TextStyle(
-                color: AppColors.textHintLight, fontSize: 13),
-            filled: true, fillColor: AppColors.surfaceLight,
+            hintStyle: TextStyle(color: cs.textHint, fontSize: 13), // ← cambiado
+            filled: true,
+            fillColor: cs.surface, // ← cambiado
             contentPadding: const EdgeInsets.symmetric(
                 horizontal: 14, vertical: 12),
             border: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(9),
-                borderSide: const BorderSide(color: AppColors.borderLight)),
+                borderSide: BorderSide(color: cs.border)), // ← cambiado
             enabledBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(9),
-                borderSide: const BorderSide(color: AppColors.borderLight)),
+                borderSide: BorderSide(color: cs.border)), // ← cambiado
             focusedBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(9),
                 borderSide: const BorderSide(
                     color: AppColors.primary, width: 1.5)),
             errorBorder: OutlineInputBorder(
                 borderRadius: BorderRadius.circular(9),
-                borderSide: const BorderSide(
-                    color: AppColors.statusError)),
+                borderSide: const BorderSide(color: AppColors.statusError)),
           ),
         ),
       ],
     );
   }
 
-  InputDecoration _dropdownDeco() => InputDecoration(
-    filled: true, fillColor: AppColors.surfaceLight,
+  InputDecoration _dropdownDeco(AppColorScheme cs) => InputDecoration(
+    filled: true,
+    fillColor: cs.surface, // ← cambiado
     contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
-    border: OutlineInputBorder(borderRadius: BorderRadius.circular(9),
-        borderSide: const BorderSide(color: AppColors.borderLight)),
-    enabledBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(9),
-        borderSide: const BorderSide(color: AppColors.borderLight)),
-    focusedBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(9),
+    border: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(9),
+        borderSide: BorderSide(color: cs.border)), // ← cambiado
+    enabledBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(9),
+        borderSide: BorderSide(color: cs.border)), // ← cambiado
+    focusedBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(9),
         borderSide: const BorderSide(color: AppColors.primary, width: 1.5)),
-    errorBorder: OutlineInputBorder(borderRadius: BorderRadius.circular(9),
+    errorBorder: OutlineInputBorder(
+        borderRadius: BorderRadius.circular(9),
         borderSide: const BorderSide(color: AppColors.statusError)),
   );
 }
+
+// ════════════════════════════════════════════
+// WIDGETS INTERNOS
+// ════════════════════════════════════════════
 
 class _SectionCard extends StatelessWidget {
   final String title;
@@ -286,12 +310,13 @@ class _SectionCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = AppColorScheme.of(context); // ← agregado
     return Container(
       padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cs.card, // ← cambiado
         borderRadius: BorderRadius.circular(14),
-        border: Border.all(color: AppColors.borderLight),
+        border: Border.all(color: cs.border), // ← cambiado
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
@@ -302,7 +327,8 @@ class _SectionCard extends StatelessWidget {
             Text(title.toUpperCase(),
                 style: const TextStyle(fontSize: 11,
                     fontWeight: FontWeight.w600,
-                    color: AppColors.primary, letterSpacing: 0.8)),
+                    color: AppColors.primary,
+                    letterSpacing: 0.8)),
           ]),
           const SizedBox(height: 14),
           ...children,
@@ -318,8 +344,9 @@ class _FieldLabel extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final cs = AppColorScheme.of(context); // ← agregado
     return Text(label,
-        style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
-            color: AppColors.textSecondaryLight, letterSpacing: 1.0));
+        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
+            color: cs.textSec, letterSpacing: 1.0)); // ← cambiado
   }
 }

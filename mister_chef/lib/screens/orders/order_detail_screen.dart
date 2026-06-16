@@ -18,10 +18,10 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
   final _authService  = AuthService();
 
   Map<String, dynamic>? _invoice;
-  bool _isLoading      = true;
-  bool _isActioning    = false;
-  bool _canModify      = false;
-  bool _isAdmin        = false;
+  bool _isLoading   = true;
+  bool _isActioning = false;
+  bool _canModify   = false;
+  bool _isAdmin     = false;
 
   @override
   void initState() {
@@ -104,21 +104,23 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     required String actionLabel,
     required Color color,
   }) async {
+    final cs = AppColorScheme.of(context); // ← agregado
     final result = await showDialog<bool>(
       context: context,
       builder: (_) => AlertDialog(
+        backgroundColor: cs.card, // ← cambiado
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(title,
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w500)),
+            style: TextStyle(fontSize: 16,
+                fontWeight: FontWeight.w500,
+                color: cs.textPrimary)), // ← cambiado
         content: Text(message,
-            style: const TextStyle(fontSize: 13,
-                color: AppColors.textSecondaryLight)),
-        shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16)),
+            style: TextStyle(fontSize: 13, color: cs.textSec)), // ← cambiado
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(context, false),
-            child: const Text('Cancelar',
-                style: TextStyle(color: AppColors.textHintLight)),
+            child: Text('Cancelar',
+                style: TextStyle(color: cs.textHint)), // ← cambiado
           ),
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
@@ -152,17 +154,27 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
         RegExp(r'(\d)(?=(\d{3})+(?!\d))'), (m) => '${m[1]}.')}';
   }
 
-  // ── Formatea fecha ISO a dd/MM/yyyy HH:mm
+  // ← corregido: fuerza UTC si no tiene zona horaria
   String _formatFecha(dynamic fecha) {
     if (fecha == null) return '';
-    final dt = DateTime.tryParse(fecha.toString());
-    if (dt == null) return fecha.toString();
-    final local = dt.toLocal();
-    final d  = local.day.toString().padLeft(2, '0');
-    final m  = local.month.toString().padLeft(2, '0');
-    final y  = local.year;
-    final h  = local.hour.toString().padLeft(2, '0');
-    final mn = local.minute.toString().padLeft(2, '0');
+    String fechaStr = fecha.toString();
+
+    DateTime? dt;
+    // Si ya tiene zona horaria (contiene + o Z) parsear directo
+    if (fechaStr.contains('Z') || fechaStr.contains('+')) {
+      dt = DateTime.tryParse(fechaStr)?.toLocal();
+    } else {
+      // Sin zona horaria: el servidor envía UTC sin marcarlo, forzar UTC
+      dt = DateTime.tryParse('${fechaStr}Z')?.toLocal();
+    }
+
+    if (dt == null) return fechaStr;
+
+    final d  = dt.day.toString().padLeft(2, '0');
+    final m  = dt.month.toString().padLeft(2, '0');
+    final y  = dt.year;
+    final h  = dt.hour.toString().padLeft(2, '0');
+    final mn = dt.minute.toString().padLeft(2, '0');
     return '$d/$m/$y $h:$mn';
   }
 
@@ -193,21 +205,26 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     }
   }
 
-  Color _statusBgColor(String? status) {
+  Color _statusBgColor(String? status, bool isDark) { // ← recibe isDark
     switch (status) {
-      case AppConstants.invoicePending:   return AppColors.chipWarningBg;
-      case AppConstants.invoiceConfirmed: return AppColors.chipSuccessBg;
-      case AppConstants.invoiceCancelled: return AppColors.chipErrorBg;
-      default: return AppColors.borderLight;
+      case AppConstants.invoicePending:
+        return AppColors.statusWarning.withOpacity(isDark ? 0.15 : 0.1);
+      case AppConstants.invoiceConfirmed:
+        return AppColors.statusSuccess.withOpacity(isDark ? 0.15 : 0.1);
+      case AppConstants.invoiceCancelled:
+        return AppColors.statusError.withOpacity(isDark ? 0.15 : 0.1);
+      default:
+        return AppColors.borderLight;
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final cs     = AppColorScheme.of(context); // ← agregado
     final status = _invoice?['status'];
 
     return Scaffold(
-      backgroundColor: AppColors.surfaceLight,
+      backgroundColor: cs.surface, // ← cambiado
       appBar: AppBar(
         backgroundColor: AppColors.primary,
         leading: IconButton(
@@ -223,8 +240,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
           ? const Center(child: CircularProgressIndicator(
               color: AppColors.primary))
           : _invoice == null
-              ? const Center(child: Text('Pedido no encontrado',
-                  style: TextStyle(color: AppColors.textHintLight)))
+              ? Center(child: Text('Pedido no encontrado',
+                  style: TextStyle(color: cs.textHint))) // ← cambiado
               : Column(
                   children: [
                     Expanded(
@@ -242,16 +259,16 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                               Container(
                                 padding: const EdgeInsets.all(14),
                                 decoration: BoxDecoration(
-                                  color: Colors.white,
+                                  color: cs.card, // ← cambiado
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: AppColors.borderLight),
+                                  border: Border.all(color: cs.border), // ← cambiado
                                 ),
                                 child: Row(
                                   children: [
                                     Container(
                                       width: 36, height: 36,
                                       decoration: BoxDecoration(
-                                        color: _statusBgColor(status),
+                                        color: _statusBgColor(status, cs.isDark), // ← cambiado
                                         shape: BoxShape.circle,
                                       ),
                                       child: Icon(
@@ -275,9 +292,9 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                                                 color: _statusColor(status))),
                                         Text(
                                           'Factura #${_invoice!['id_invoice']} · ${_formatFecha(_invoice!['date'])}',
-                                          style: const TextStyle(
+                                          style: TextStyle(
                                               fontSize: 11,
-                                              color: AppColors.textHintLight),
+                                              color: cs.textHint), // ← cambiado
                                         ),
                                       ],
                                     ),
@@ -288,14 +305,14 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                               const SizedBox(height: 14),
 
                               // ── Info del cliente
-                              _buildSectionLabel('Cliente'),
+                              _buildSectionLabel('Cliente', cs),
                               const SizedBox(height: 8),
                               Container(
                                 padding: const EdgeInsets.all(14),
                                 decoration: BoxDecoration(
-                                  color: Colors.white,
+                                  color: cs.card, // ← cambiado
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: AppColors.borderLight),
+                                  border: Border.all(color: cs.border), // ← cambiado
                                 ),
                                 child: Column(
                                   children: [
@@ -303,22 +320,23 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                                       icon: Icons.store_outlined,
                                       label: 'Cliente',
                                       value: _clientName(),
+                                      cs: cs, // ← agregado
                                     ),
-                                    const Divider(height: 1,
-                                        color: Color(0xFFF0F0F0)),
+                                    Divider(height: 1, color: cs.divider), // ← cambiado
                                     _InfoRow(
                                       icon: Icons.location_on_outlined,
                                       label: 'Dirección',
                                       value: _invoice!['client']?['address']
                                           ?? 'No registrada',
+                                      cs: cs,
                                     ),
                                     if (_invoice!['client']?['phone_number'] != null) ...[
-                                      const Divider(height: 1,
-                                          color: Color(0xFFF0F0F0)),
+                                      Divider(height: 1, color: cs.divider),
                                       _InfoRow(
                                         icon: Icons.phone_outlined,
                                         label: 'Teléfono',
                                         value: _invoice!['client']['phone_number'].toString(),
+                                        cs: cs,
                                       ),
                                     ],
                                   ],
@@ -328,13 +346,13 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                               const SizedBox(height: 14),
 
                               // ── Productos
-                              _buildSectionLabel('Productos'),
+                              _buildSectionLabel('Productos', cs),
                               const SizedBox(height: 8),
                               Container(
                                 decoration: BoxDecoration(
-                                  color: Colors.white,
+                                  color: cs.card, // ← cambiado
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: AppColors.borderLight),
+                                  border: Border.all(color: cs.border), // ← cambiado
                                 ),
                                 child: Column(
                                   children: (_invoice!['details'] as List? ?? [])
@@ -360,7 +378,8 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                                               Container(
                                                 width: 38, height: 38,
                                                 decoration: BoxDecoration(
-                                                  color: AppColors.accent.withOpacity(0.15),
+                                                  color: AppColors.accent.withOpacity(
+                                                      cs.isDark ? 0.2 : 0.15), // ← adaptativo
                                                   borderRadius: BorderRadius.circular(8),
                                                 ),
                                                 child: const Icon(
@@ -374,14 +393,14 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                                                   crossAxisAlignment: CrossAxisAlignment.start,
                                                   children: [
                                                     Text(nombre,
-                                                        style: const TextStyle(
+                                                        style: TextStyle(
                                                             fontSize: 12,
                                                             fontWeight: FontWeight.w500,
-                                                            color: AppColors.textPrimaryLight)),
+                                                            color: cs.textPrimary)), // ← cambiado
                                                     Text('${_formatMoneda(precio)} c/u',
-                                                        style: const TextStyle(
+                                                        style: TextStyle(
                                                             fontSize: 11,
-                                                            color: AppColors.textHintLight)),
+                                                            color: cs.textHint)), // ← cambiado
                                                   ],
                                                 ),
                                               ),
@@ -389,22 +408,22 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                                                 crossAxisAlignment: CrossAxisAlignment.end,
                                                 children: [
                                                   Text('x$cantidad',
-                                                      style: const TextStyle(
+                                                      style: TextStyle(
                                                           fontSize: 11,
-                                                          color: AppColors.textHintLight)),
+                                                          color: cs.textHint)), // ← cambiado
                                                   Text(_formatMoneda(subtotal),
-                                                      style: const TextStyle(
+                                                      style: TextStyle(
                                                           fontSize: 13,
                                                           fontWeight: FontWeight.w500,
-                                                          color: AppColors.textPrimaryLight)),
+                                                          color: cs.textPrimary)), // ← cambiado
                                                 ],
                                               ),
                                             ],
                                           ),
                                         ),
                                         if (i < total.length - 1)
-                                          const Divider(height: 1,
-                                              color: Color(0xFFF0F0F0),
+                                          Divider(height: 1,
+                                              color: cs.divider, // ← cambiado
                                               indent: 14, endIndent: 14),
                                       ],
                                     );
@@ -416,19 +435,20 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 
                               // ── Creado por
                               if (_getCreador() != null) ...[
-                                _buildSectionLabel('Creado por'),
+                                _buildSectionLabel('Creado por', cs),
                                 const SizedBox(height: 8),
                                 Container(
                                   padding: const EdgeInsets.all(14),
                                   decoration: BoxDecoration(
-                                    color: Colors.white,
+                                    color: cs.card, // ← cambiado
                                     borderRadius: BorderRadius.circular(12),
-                                    border: Border.all(color: AppColors.borderLight),
+                                    border: Border.all(color: cs.border), // ← cambiado
                                   ),
                                   child: _InfoRow(
                                     icon: Icons.person_outline,
                                     label: 'Empleado',
                                     value: _getCreador()!,
+                                    cs: cs,
                                   ),
                                 ),
                                 const SizedBox(height: 14),
@@ -438,16 +458,16 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                               Container(
                                 padding: const EdgeInsets.all(14),
                                 decoration: BoxDecoration(
-                                  color: Colors.white,
+                                  color: cs.card, // ← cambiado
                                   borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(color: AppColors.borderLight),
+                                  border: Border.all(color: cs.border), // ← cambiado
                                 ),
                                 child: Row(
                                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                   children: [
-                                    const Text('Total del pedido',
+                                    Text('Total del pedido',
                                         style: TextStyle(fontSize: 14,
-                                            color: AppColors.textSecondaryLight)),
+                                            color: cs.textSec)), // ← cambiado
                                     Text(_formatMoneda(_invoice!['total']),
                                         style: const TextStyle(
                                             fontSize: 22,
@@ -465,7 +485,7 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
                     ),
 
                     if (status != AppConstants.invoiceCancelled)
-                      _buildActionButtons(status),
+                      _buildActionButtons(status, cs),
                   ],
                 ),
     );
@@ -484,16 +504,17 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
     return nombre.isEmpty ? null : nombre;
   }
 
-  Widget _buildSectionLabel(String label) => Text(label.toUpperCase(),
-      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
-          color: AppColors.textSecondaryLight, letterSpacing: 1.2));
+  Widget _buildSectionLabel(String label, AppColorScheme cs) =>
+      Text(label.toUpperCase(),
+          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
+              color: cs.textSec, letterSpacing: 1.2));
 
-  Widget _buildActionButtons(String? status) {
+  Widget _buildActionButtons(String? status, AppColorScheme cs) {
     return Container(
       padding: const EdgeInsets.all(16),
-      decoration: const BoxDecoration(
-        color: Colors.white,
-        border: Border(top: BorderSide(color: AppColors.borderLight)),
+      decoration: BoxDecoration(
+        color: cs.card, // ← cambiado
+        border: Border(top: BorderSide(color: cs.border)), // ← cambiado
       ),
       child: Row(
         children: [
@@ -549,8 +570,14 @@ class _OrderDetailScreenState extends State<OrderDetailScreen> {
 class _InfoRow extends StatelessWidget {
   final IconData icon;
   final String label, value;
-  const _InfoRow(
-      {required this.icon, required this.label, required this.value});
+  final AppColorScheme cs; // ← agregado
+
+  const _InfoRow({
+    required this.icon,
+    required this.label,
+    required this.value,
+    required this.cs, // ← agregado
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -558,19 +585,25 @@ class _InfoRow extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
         children: [
-          Icon(icon, color: AppColors.primary, size: 18),
+          Container(
+            width: 32, height: 32,
+            decoration: BoxDecoration(
+              color: AppColors.primary.withOpacity(cs.isDark ? 0.2 : 0.08), // ← adaptativo
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Icon(icon, color: AppColors.primary, size: 16),
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(label,
-                    style: const TextStyle(fontSize: 10,
-                        color: AppColors.textHintLight)),
+                    style: TextStyle(fontSize: 10, color: cs.textHint)), // ← cambiado
                 Text(value,
-                    style: const TextStyle(fontSize: 13,
+                    style: TextStyle(fontSize: 13,
                         fontWeight: FontWeight.w500,
-                        color: AppColors.textPrimaryLight)),
+                        color: cs.textPrimary)), // ← cambiado
               ],
             ),
           ),

@@ -2,7 +2,7 @@ class AppConstants {
   // ══════════════════════════════════════════════════════
   // URL BASE DE LA API DE LARAVEL
   // ══════════════════════════════════════════════════════
-  static const String baseUrl = 'http://192.168.1.17:8000/api/v1';
+  static const String baseUrl = 'http://192.168.1.32:8000/api/v1';
 
   // ── AUTH
   static const String endpointLogin  = '/login';

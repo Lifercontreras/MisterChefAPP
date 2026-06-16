@@ -58,19 +58,10 @@ class AccessibilityScreen extends StatelessWidget {
                   onChanged: (v) =>
                       context.read<AccessibilityProvider>().setDarkMode(v),
                 ),
-                _ToggleRow(
-                  icon: Icons.light_mode_outlined,
-                  iconBg: const Color(0xFFF57F17).withOpacity(0.1),
-                  iconColor: const Color(0xFFF57F17),
-                  title: 'Modo claro',
-                  subtitle: 'Usa fondos blancos y claros',
-                  value: !accessibility.isDarkMode,
-                  textPrimary: textPrimary, textSec: textSec,
-                  onChanged: (v) =>
-                      context.read<AccessibilityProvider>().setDarkMode(!v),
-                ),
               ],
             ),
+
+            const SizedBox(height: 20),
 
             const SizedBox(height: 20),
 

@@ -3,7 +3,9 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../config/app_colors.dart';
 import '../../config/constants.dart';
 import '../../services/customer_service.dart';
+import '../../services/auth_service.dart'; // ← agregado
 import '../orders/new_order_screen.dart';
+import 'create_customer_screen.dart';
 
 class CustomerDetailScreen extends StatefulWidget {
   final String customerId;
@@ -16,8 +18,7 @@ class CustomerDetailScreen extends StatefulWidget {
   });
 
   @override
-  State<CustomerDetailScreen> createState() =>
-      _CustomerDetailScreenState();
+  State<CustomerDetailScreen> createState() => _CustomerDetailScreenState();
 }
 
 class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
@@ -26,11 +27,19 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
   Map<String, dynamic>? _client;
   List<Map<String, dynamic>> _invoices = [];
   bool _isLoading = true;
+  String _userRole = ''; // ← agregado
 
   @override
   void initState() {
     super.initState();
+    _loadUserRole(); // ← agregado
     _loadData();
+  }
+
+  // ← agregado
+  Future<void> _loadUserRole() async {
+    final userData = await AuthService().getUserData();
+    if (mounted) setState(() => _userRole = userData['tipo'] ?? '');
   }
 
   Future<void> _loadData() async {
@@ -45,8 +54,8 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
       }
       if (mounted) {
         setState(() {
-          _client    = client;
-          _invoices  = invoices;
+          _client   = client;
+          _invoices = invoices;
           _isLoading = false;
         });
       }
@@ -100,16 +109,6 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
     }
   }
 
-  Future<void> _llamar() async {
-    final tel = _client?['phone_number']?.toString() ?? '';
-    if (tel.isEmpty) {
-      _showMsg('No hay teléfono registrado', isError: true);
-      return;
-    }
-    final uri = Uri.parse('tel:$tel');
-    if (await canLaunchUrl(uri)) await launchUrl(uri);
-  }
-
   Future<void> _abrirMapa() async {
     final lat = (_client?['latitude']  as num?)?.toDouble();
     final lng = (_client?['longitude'] as num?)?.toDouble();
@@ -147,16 +146,16 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final cs        = AppColorScheme.of(context);
     final active    = _client?['status'] == true;
     final ciudad    = _client?['city']?['city_name'] ?? '';
     final depto     = _client?['city']?['department']?['department_name'] ?? '';
     final ubicacion = [ciudad, depto].where((s) => s.isNotEmpty).join(', ');
 
     return Scaffold(
-      backgroundColor: AppColors.surfaceLight,
+      backgroundColor: cs.background,
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(
-              color: AppColors.primary))
+          ? const Center(child: CircularProgressIndicator(color: AppColors.primary))
           : Column(
               children: [
                 _buildHeader(active),
@@ -170,18 +169,18 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          _buildStats(),
+                          _buildStats(cs),
                           const SizedBox(height: 14),
-                          _buildSectionLabel('Información de contacto'),
+                          _buildSectionLabel('Información de contacto', cs),
                           const SizedBox(height: 8),
-                          _buildContactCard(ubicacion),
+                          _buildContactCard(ubicacion, cs),
                           const SizedBox(height: 14),
                           _buildQuickActions(),
                           const SizedBox(height: 14),
                           if (_invoices.isNotEmpty) ...[
-                            _buildSectionLabel('Últimas facturas'),
+                            _buildSectionLabel('Últimas facturas', cs),
                             const SizedBox(height: 8),
-                            _buildInvoiceList(),
+                            _buildInvoiceList(cs),
                           ],
                           const SizedBox(height: 16),
                         ],
@@ -189,7 +188,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                     ),
                   ),
                 ),
-                _buildCreateButton(),
+                _buildCreateButton(cs),
               ],
             ),
     );
@@ -215,6 +214,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
+                  // ── Fila superior: volver + título + editar
                   Row(
                     children: [
                       GestureDetector(
@@ -230,20 +230,57 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                         ),
                       ),
                       const SizedBox(width: 10),
-                      const Text('Detalle del cliente',
-                          style: TextStyle(fontSize: 15,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.white)),
+                      const Expanded( // ← cambiado a Expanded para que el botón editar quede a la derecha
+                        child: Text('Detalle del cliente',
+                            style: TextStyle(fontSize: 15,
+                                fontWeight: FontWeight.w500,
+                                color: Colors.white)),
+                      ),
+                      // ── Botón editar solo para admin ← agregado
+                      if (_userRole == 'A')
+                        GestureDetector(
+                          onTap: () async {
+                            final result = await Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => CreateCustomerScreen(
+                                    customer: _client),
+                              ),
+                            );
+                            if (result == true) _loadData();
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 12, vertical: 7),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(8),
+                            ),
+                            child: const Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                Icon(Icons.edit_outlined,
+                                    color: Colors.white, size: 14),
+                                SizedBox(width: 5),
+                                Text('Editar',
+                                    style: TextStyle(
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.w500,
+                                        color: Colors.white)),
+                              ],
+                            ),
+                          ),
+                        ),
                     ],
                   ),
                   const SizedBox(height: 16),
+                  // ── Avatar + info cliente
                   Row(
                     children: [
                       Container(
                         width: 58, height: 58,
                         decoration: BoxDecoration(
-                          color: AppColors.accent,
-                          shape: BoxShape.circle,
+                          color: AppColors.accent, shape: BoxShape.circle,
                           border: Border.all(
                               color: Colors.white.withOpacity(0.2), width: 3),
                         ),
@@ -281,9 +318,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                                 ),
                                 const SizedBox(width: 5),
                                 Text(
-                                  active
-                                      ? 'Cliente activo'
-                                      : 'Cliente inactivo',
+                                  active ? 'Cliente activo' : 'Cliente inactivo',
                                   style: const TextStyle(
                                       fontSize: 10, color: Colors.white),
                                 ),
@@ -303,14 +338,14 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
     );
   }
 
-  Widget _buildStats() {
+  Widget _buildStats(AppColorScheme cs) {
     final lastDate = _invoices.isNotEmpty
         ? _formatTiempo(_invoices.first['date']?.toString())
         : 'N/A';
     final stats = [
       {'num': '$_totalPedidos',             'lbl': 'Facturas'},
       {'num': _formatMoneda(_totalCompras), 'lbl': 'Total compras'},
-      {'num': lastDate,                      'lbl': 'Últ. factura'},
+      {'num': lastDate,                     'lbl': 'Últ. factura'},
     ];
     return Row(
       children: stats.asMap().entries.map((entry) {
@@ -321,9 +356,9 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
             margin: EdgeInsets.only(right: i < 2 ? 8 : 0),
             padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
             decoration: BoxDecoration(
-              color: Colors.white,
+              color: cs.card,
               borderRadius: BorderRadius.circular(10),
-              border: Border.all(color: AppColors.borderLight),
+              border: Border.all(color: cs.border),
             ),
             child: Column(
               children: [
@@ -334,8 +369,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
                 const SizedBox(height: 3),
                 Text(s['lbl']!,
                     textAlign: TextAlign.center,
-                    style: const TextStyle(fontSize: 9,
-                        color: AppColors.textHintLight)),
+                    style: TextStyle(fontSize: 9, color: cs.textHint)),
               ],
             ),
           ),
@@ -344,30 +378,33 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
     );
   }
 
-  Widget _buildContactCard(String ubicacion) {
+  Widget _buildContactCard(String ubicacion, AppColorScheme cs) {
     return Container(
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: cs.card,
         borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: AppColors.borderLight),
+        border: Border.all(color: cs.border),
       ),
       child: Column(
         children: [
           _ContactRow(
               icon: Icons.phone_outlined,
               label: 'Teléfono',
-              value: _client?['phone_number']?.toString() ?? 'No registrado'),
-          const Divider(height: 1, color: Color(0xFFF0F0F0)),
+              value: _client?['phone_number']?.toString() ?? 'No registrado',
+              cs: cs),
+          Divider(height: 1, color: cs.divider),
           _ContactRow(
               icon: Icons.location_on_outlined,
               label: 'Dirección',
-              value: _client?['address'] ?? 'No registrada'),
+              value: _client?['address'] ?? 'No registrada',
+              cs: cs),
           if (ubicacion.isNotEmpty) ...[
-            const Divider(height: 1, color: Color(0xFFF0F0F0)),
+            Divider(height: 1, color: cs.divider),
             _ContactRow(
                 icon: Icons.location_city_outlined,
                 label: 'Ciudad',
-                value: ubicacion),
+                value: ubicacion,
+                cs: cs),
           ],
         ],
       ),
@@ -375,44 +412,47 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
   }
 
   Widget _buildQuickActions() {
+    final cs     = AppColorScheme.of(context);
     final active = _client?['status'] == true || _client?['status'] == 1;
     return Row(
       children: [
-        Expanded(
-          child: _ActionBtn(
+        Expanded(child: _ActionBtn(
             icon: Icons.map_outlined,
             label: 'Ver mapa',
             color: AppColors.statusSuccess,
-            bgColor: AppColors.chipSuccessBg,
-            onTap: _abrirMapa,
-          ),
-        ),
+            bgColor: cs.isDark
+                ? AppColors.statusSuccess.withOpacity(0.15)
+                : AppColors.chipSuccessBg,
+            onTap: _abrirMapa)),
         const SizedBox(width: 10),
-        Expanded(
-          child: _ActionBtn(
+        Expanded(child: _ActionBtn(
             icon: Icons.navigation_outlined,
             label: 'Navegar',
             color: AppColors.statusWarning,
-            bgColor: AppColors.chipWarningBg,
-            onTap: () => Navigator.pushNamed(context, '/route'),
-          ),
-        ),
+            bgColor: cs.isDark
+                ? AppColors.statusWarning.withOpacity(0.15)
+                : AppColors.chipWarningBg,
+            onTap: () => Navigator.pushNamed(context, '/route'))),
         const SizedBox(width: 10),
-        Expanded(
-          child: _ActionBtn(
-            icon: active ? Icons.toggle_off_outlined : Icons.toggle_on_outlined,
+        Expanded(child: _ActionBtn(
+            icon: active
+                ? Icons.toggle_off_outlined
+                : Icons.toggle_on_outlined,
             label: active ? 'Desactivar' : 'Activar',
             color: active ? AppColors.statusError : AppColors.statusSuccess,
-            bgColor: active ? AppColors.chipErrorBg : AppColors.chipSuccessBg,
-            onTap: _toggleStatus,
-          ),
-        ),
+            bgColor: active
+                ? (cs.isDark
+                    ? AppColors.statusError.withOpacity(0.15)
+                    : AppColors.chipErrorBg)
+                : (cs.isDark
+                    ? AppColors.statusSuccess.withOpacity(0.15)
+                    : AppColors.chipSuccessBg),
+            onTap: _toggleStatus)),
       ],
     );
   }
 
-
-  Widget _buildInvoiceList() {
+  Widget _buildInvoiceList(AppColorScheme cs) {
     return Column(
       children: _invoices.map((inv) {
         final status = inv['status'] ?? '';
@@ -421,30 +461,27 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
           margin: const EdgeInsets.only(bottom: 8),
           padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
           decoration: BoxDecoration(
-            color: Colors.white,
+            color: cs.card,
             borderRadius: BorderRadius.circular(10),
-            border: Border.all(color: AppColors.borderLight),
+            border: Border.all(color: cs.border),
           ),
           child: Row(
             children: [
               Container(
                   width: 8, height: 8,
                   decoration: BoxDecoration(
-                      color: _statusColor(status),
-                      shape: BoxShape.circle)),
+                      color: _statusColor(status), shape: BoxShape.circle)),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text('#${inv['id_invoice'] ?? '---'}',
-                        style: const TextStyle(fontSize: 10,
-                            color: AppColors.textHintLight)),
+                        style: TextStyle(fontSize: 10, color: cs.textHint)),
                     Text(
                       '${_formatTiempo(inv['date']?.toString())} · ${_statusLabel(status)}',
-                      style: const TextStyle(fontSize: 11,
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.textPrimaryLight),
+                      style: TextStyle(fontSize: 11,
+                          fontWeight: FontWeight.w500, color: cs.textPrimary),
                     ),
                   ],
                 ),
@@ -460,18 +497,18 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
     );
   }
 
-  Widget _buildCreateButton() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(14, 0, 14, 16),
+  Widget _buildCreateButton(AppColorScheme cs) {
+    return Container(
+      color: cs.card,
+      padding: const EdgeInsets.fromLTRB(14, 8, 14, 16),
       child: SizedBox(
         width: double.infinity,
         child: ElevatedButton.icon(
           onPressed: () => Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (_) => NewOrderScreen(preselectedCustomer: _client),
-            ),
-          ),
+              context,
+              MaterialPageRoute(
+                  builder: (_) =>
+                      NewOrderScreen(preselectedCustomer: _client))),
           icon: const Icon(Icons.receipt_long_outlined, size: 20),
           label: const Text('Crear factura a este cliente'),
           style: ElevatedButton.styleFrom(
@@ -487,17 +524,28 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
     );
   }
 
-  Widget _buildSectionLabel(String label) => Text(label.toUpperCase(),
-      style: const TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
-          color: AppColors.textSecondaryLight, letterSpacing: 1.2));
+  Widget _buildSectionLabel(String label, AppColorScheme cs) =>
+      Text(label.toUpperCase(),
+          style: TextStyle(
+              fontSize: 10,
+              fontWeight: FontWeight.w600,
+              color: cs.textSec,
+              letterSpacing: 1.2));
 }
 
-// ── Fila de contacto
+// ════════════════════════════════════════════
+// WIDGETS EXTERNOS
+// ════════════════════════════════════════════
+
 class _ContactRow extends StatelessWidget {
   final IconData icon;
   final String label, value;
+  final AppColorScheme cs;
   const _ContactRow(
-      {required this.icon, required this.label, required this.value});
+      {required this.icon,
+      required this.label,
+      required this.value,
+      required this.cs});
 
   @override
   Widget build(BuildContext context) {
@@ -508,7 +556,7 @@ class _ContactRow extends StatelessWidget {
           Container(
             width: 32, height: 32,
             decoration: BoxDecoration(
-              color: AppColors.chipErrorBg,
+              color: AppColors.primary.withOpacity(cs.isDark ? 0.2 : 0.08), // ← adaptativo
               borderRadius: BorderRadius.circular(8),
             ),
             child: Icon(icon, color: AppColors.primary, size: 16),
@@ -518,11 +566,13 @@ class _ContactRow extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(label, style: const TextStyle(fontSize: 10,
-                    color: AppColors.textHintLight)),
-                Text(value, style: const TextStyle(fontSize: 12,
-                    fontWeight: FontWeight.w500,
-                    color: AppColors.textPrimaryLight)),
+                Text(label,
+                    style: TextStyle(fontSize: 10, color: cs.textHint)),
+                Text(value,
+                    style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: cs.textPrimary)),
               ],
             ),
           ),
@@ -532,14 +582,17 @@ class _ContactRow extends StatelessWidget {
   }
 }
 
-// ── Botón de acción rápida
 class _ActionBtn extends StatelessWidget {
   final IconData icon;
   final String label;
   final Color color, bgColor;
   final VoidCallback onTap;
-  const _ActionBtn({required this.icon, required this.label,
-      required this.color, required this.bgColor, required this.onTap});
+  const _ActionBtn(
+      {required this.icon,
+      required this.label,
+      required this.color,
+      required this.bgColor,
+      required this.onTap});
 
   @override
   Widget build(BuildContext context) {
@@ -550,14 +603,17 @@ class _ActionBtn extends StatelessWidget {
         decoration: BoxDecoration(
           color: bgColor,
           borderRadius: BorderRadius.circular(10),
-          border: Border.all(color: color.withOpacity(0.3)),
+          border: Border.all(color: color.withOpacity(0.35)),
         ),
         child: Column(
           children: [
             Icon(icon, color: color, size: 22),
             const SizedBox(height: 4),
-            Text(label, style: TextStyle(fontSize: 11,
-                fontWeight: FontWeight.w500, color: color)),
+            Text(label,
+                style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w600,
+                    color: color)),
           ],
         ),
       ),

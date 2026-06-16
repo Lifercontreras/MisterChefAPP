@@ -145,11 +145,20 @@ class _CustomersScreenState extends State<CustomersScreen> {
                       ),
                       child: TextField(
                         controller: _searchCtrl,
-                        style: const TextStyle(color: Colors.white, fontSize: 13),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? Colors.white
+                              : Colors.black87,
+                        ),
                         decoration: InputDecoration(
                           hintText: 'Buscar por nombre o dirección...',
                           hintStyle: TextStyle(
-                              color: Colors.white.withOpacity(0.6), fontSize: 13),
+                            fontSize: 13,
+                            color: Theme.of(context).brightness == Brightness.dark
+                                ? Colors.white.withOpacity(0.6)
+                                : Colors.black54,
+                          ),
                           prefixIcon: Icon(Icons.search,
                               color: Colors.white.withOpacity(0.7), size: 20),
                           border: InputBorder.none,

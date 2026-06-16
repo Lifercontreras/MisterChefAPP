@@ -40,7 +40,7 @@ class ApiService {
     if (res.statusCode >= 200 && res.statusCode < 300) return body;
     final msg = body['message'] ?? 'Error desconocido';
     switch (res.statusCode) {
-      case 401: throw ApiException('Sesión expirada. Inicia sesión de nuevo.', statusCode: 401);
+      case 401: throw ApiException(msg.toString(), statusCode: 401);
       case 403: throw ApiException('No tienes permiso para esta acción.',      statusCode: 403);
       case 404: throw ApiException('Recurso no encontrado.',                   statusCode: 404);
       case 422:

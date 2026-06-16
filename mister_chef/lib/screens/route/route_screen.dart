@@ -149,7 +149,6 @@ class _RouteScreenState extends State<RouteScreen> {
         points:     points,
         color:      AppColors.mapRoute,
         width:      3,
-        patterns:   [PatternItem.dash(12), PatternItem.gap(6)],
       ));
     }
 
