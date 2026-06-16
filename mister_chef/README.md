@@ -153,3 +153,39 @@ flutter build apk --release
 ```
 
 > **Requisito**: Tener el servidor Laravel corriendo en la red local con la IP configurada en `AppConstants.baseUrl`.
+
+## Git 
+
+## Estrategia de Ramas
+
+El proyecto utiliza dos ramas principales:
+
+- `main`: contiene la versión estable del proyecto.
+- `develop`: contiene los avances de desarrollo antes de ser integrados a la versión estable.
+
+Flujo de trabajo:
+
+1. Los cambios se realizan en la rama `develop`.
+2. Una vez probados y validados, los cambios se integran en la rama `main`.
+3. La rama `main` debe mantenerse siempre en un estado estable y funcional.
+
+## Convención de Commits
+
+Para mantener un historial organizado se utilizarán los siguientes prefijos:
+
+| Prefijo | Descripción |
+|----------|------------|
+| feat | Nueva funcionalidad |
+| fix | Corrección de errores |
+| docs | Cambios en documentación |
+| style | Cambios de formato o estilos |
+| refactor | Reestructuración de código |
+| chore | Tareas de mantenimiento |
+
+Ejemplos:
+
+```bash
+git commit -m "feat: agregar pantalla de clientes"
+git commit -m "fix: corregir error de autenticación"
+git commit -m "docs: actualizar README"
+```
