@@ -2,41 +2,71 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../config/constants.dart';
 import 'api_service.dart';
 
+/// Servicio de autenticación de Mister Chef.
+///
+/// Gestiona el ciclo completo de sesión del empleado:
+/// inicio de sesión, cierre de sesión, verificación de estado
+/// y persistencia local del token y datos de usuario.
+///
+/// Se comunica con los endpoints `/login`, `/logout` y `/me`
+/// de la API de Laravel a través de [ApiService].
 class AuthService {
   final _api = ApiService();
 
   // ══════════════════════════════════════════
   // LOGIN — POST /api/v1/login
-  // Body:      { "email": "", "password": "" }
-  // Respuesta: {
+  //
+  // Envía las credenciales al servidor y, si son válidas, guarda
+  // el token y los datos del empleado en SharedPreferences.
+  //
+  // Respuesta del servidor:
+  // {
   //   "message": "Inicio de sesión exitoso.",
   //   "token": "...",
   //   "employee": {
   //     "document_employee", "name_1", "name_2",
   //     "last_name_1", "last_name_2", "email",
   //     "type",   ← 'V' = Vendedor | 'A' = Administrador
-  //     "status", "can_modify_invoice", "phone_number"
+  //     "status", "can_modify_invoice", "phone_number",
+  //     "first_login"
   //   }
   // }
   // ══════════════════════════════════════════
+
+  /// Autentica al empleado con [email] y [password].
+  ///
+  /// Si las credenciales son válidas, persiste la sesión localmente.
+  /// Lanza [ApiException] con código 401 si las credenciales son incorrectas.
+  ///
+  /// Retorna el mapa completo de la respuesta del servidor, incluyendo
+  /// los datos del empleado para que la UI pueda redirigir según el rol.
   Future<Map<String, dynamic>> login(String email, String password) async {
     final res = await _api.post(
       AppConstants.endpointLogin,
       {'email': email, 'password': password},
-      auth: false,
+      auth: false, // No requiere token previo para autenticarse.
     );
     await _saveSession(res);
     return Map<String, dynamic>.from(res);
   }
+
   // ══════════════════════════════════════════
   // LOGOUT — POST /api/v1/logout
-  // Respuesta: { "message": "Sesión cerrada correctamente." }
+  //
+  // Invalida el token en el servidor y limpia los datos locales.
+  // Si la petición al servidor falla (sin internet), la sesión local
+  // se limpia de todos modos para no dejar al usuario atrapado.
   // ══════════════════════════════════════════
+
+  /// Cierra la sesión del empleado autenticado.
+  ///
+  /// Intenta invalidar el token en el servidor. Si falla (ej. sin conexión),
+  /// igualmente elimina los datos locales de sesión.
   Future<void> logout() async {
     try {
       await _api.post(AppConstants.endpointLogout, {});
     } catch (_) {
-      // Si falla el servidor igual limpiamos sesión local
+      // Se ignora el error del servidor: la limpieza local es obligatoria.
     } finally {
       await _clearSession();
     }
@@ -44,14 +74,23 @@ class AuthService {
 
   // ══════════════════════════════════════════
   // ME — GET /api/v1/me
-  // Devuelve los datos completos del empleado autenticado
+  //
+  // Devuelve los datos actualizados del empleado autenticado.
+  // Útil para refrescar información sin hacer login nuevamente.
   // ══════════════════════════════════════════
+
+  /// Obtiene los datos completos del empleado actualmente autenticado.
+  ///
+  /// Requiere que haya una sesión activa (token válido en SharedPreferences).
   Future<Map<String, dynamic>> getMe() async {
     final res = await _api.get(AppConstants.endpointMe);
     return Map<String, dynamic>.from(res);
   }
 
-  // ── Guardar sesión localmente
+  /// Persiste el token y los datos del empleado en [SharedPreferences]
+  /// tras un inicio de sesión exitoso.
+  ///
+  /// Construye el nombre completo concatenando name_1, name_2 y last_name_1.
   Future<void> _saveSession(dynamic res) async {
     final prefs    = await SharedPreferences.getInstance();
     final token    = res['token']    as String?;
@@ -64,7 +103,8 @@ class AuthService {
     if (employee != null) {
       final firstLogin = employee['first_login'] as bool? ?? false;
       await prefs.setBool('first_login', firstLogin);
-      // Nombre completo: name_1 + name_2 + last_name_1
+
+      // Construye nombre legible: "Carlos Andrés Gómez".
       final nombre = [
         employee['name_1']     ?? '',
         employee['name_2']     ?? '',
@@ -79,7 +119,9 @@ class AuthService {
     }
   }
 
-  // ── Limpiar sesión local
+  /// Elimina todos los datos de sesión del almacenamiento local.
+  ///
+  /// Llamado automáticamente por [logout] y en caso de token expirado.
   Future<void> _clearSession() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(AppConstants.keyAuthToken);
@@ -88,14 +130,20 @@ class AuthService {
     await prefs.remove(AppConstants.keyUserRole);
   }
 
-  // ── ¿Hay sesión activa?
+  /// Verifica si existe un token de sesión válido almacenado localmente.
+  ///
+  /// No valida el token contra el servidor; solo comprueba su existencia.
+  /// Retorna `true` si hay una sesión activa, `false` en caso contrario.
   Future<bool> isLoggedIn() async {
     final prefs = await SharedPreferences.getInstance();
     final token = prefs.getString(AppConstants.keyAuthToken);
     return token != null && token.isNotEmpty;
   }
 
-  // ── Datos guardados localmente
+  /// Retorna un mapa con los datos del empleado guardados localmente.
+  ///
+  /// Claves del mapa: `'doc'` (documento), `'nombre'` (nombre completo),
+  /// `'tipo'` (rol: 'V' o 'A').
   Future<Map<String, String>> getUserData() async {
     final prefs = await SharedPreferences.getInstance();
     return {
@@ -105,30 +153,37 @@ class AuthService {
     };
   }
 
-  // ── ¿Es administrador?
+  /// Retorna `true` si el empleado autenticado tiene rol de Administrador.
   Future<bool> isAdmin() async {
     final data = await getUserData();
     return data['tipo'] == AppConstants.roleAdministrador;
   }
 
-  // ── ¿Es vendedor?
+  /// Retorna `true` si el empleado autenticado tiene rol de Vendedor.
   Future<bool> isVendedor() async {
     final data = await getUserData();
     return data['tipo'] == AppConstants.roleVendedor;
   }
-    // ── ¿Es primer login?
+
+  /// Retorna `true` si es el primer inicio de sesión del empleado.
+  ///
+  /// En ese caso, la app lo redirige a [ChangePasswordScreen] para que
+  /// establezca una contraseña personalizada antes de continuar.
   Future<bool> isFirstLogin() async {
-      final prefs = await SharedPreferences.getInstance();
-      return prefs.getBool('first_login') ?? false;
+    final prefs = await SharedPreferences.getInstance();
+    return prefs.getBool('first_login') ?? false;
   }
 
-  // ── Cambiar contraseña
+  /// Cambia la contraseña del empleado autenticado.
+  ///
+  /// Envía [newPassword] al servidor y, si tiene éxito, marca
+  /// `first_login` como `false` para no volver a forzar el cambio.
   Future<void> changePassword(String newPassword) async {
-      await _api.post(
-        '/change-password',
-        {'password': newPassword, 'password_confirmation': newPassword},
-      );
-      final prefs = await SharedPreferences.getInstance();
-      await prefs.setBool('first_login', false);
+    await _api.post(
+      '/change-password',
+      {'password': newPassword, 'password_confirmation': newPassword},
+    );
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool('first_login', false);
   }
 }

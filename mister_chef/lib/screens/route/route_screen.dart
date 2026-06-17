@@ -98,6 +98,11 @@ class _RouteScreenState extends State<RouteScreen> {
     setState(() => _isLoading = true);
     try {
       final data = await _routeService.getRoutes();
+      // ── LOGS TEMPORALES ──────────────────────────────
+      print('Rutas recibidas: ${data.length}');
+      print('Total clients: ${data.first['total_clients']}');
+      print('Clients array length: ${(data.first['clients'] as List).length}');
+      // 
       List<Map<String, dynamic>> clients = [];
       if (data.isNotEmpty) {
         final myRoute = data.first;
@@ -134,7 +139,11 @@ class _RouteScreenState extends State<RouteScreen> {
       _markers.add(Marker(
         markerId: MarkerId('client_$i'),
         position: pos,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
+        icon: BitmapDescriptor.defaultMarkerWithHue(
+          (c['status'] == 'C')
+            ? BitmapDescriptor.hueGreen
+            : BitmapDescriptor.hueRed,
+        ),
         infoWindow: InfoWindow(
           title:   empresa.isNotEmpty ? empresa : nombre,
           snippet: c['address'] ?? '',
@@ -200,6 +209,7 @@ class _RouteScreenState extends State<RouteScreen> {
 
       setState(() {
         _polylines.removeWhere((p) => p.polylineId.value == 'ruta_navegacion');
+        _polylines.removeWhere((p) => p.polylineId.value == 'mi_ruta');
         _polylines.add(Polyline(
           polylineId: const PolylineId('ruta_navegacion'),
           points:     routeLatLng,

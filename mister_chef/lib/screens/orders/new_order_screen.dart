@@ -117,6 +117,13 @@ class _NewOrderScreenState extends State<NewOrderScreen> {
       _showMsg('Selecciona un cliente', isError: true);
       return;
     }
+    final clienteActivo = _selectedCustomer!['status'] == true ||
+        _selectedCustomer!['status'] == 1;
+    if (!clienteActivo) {
+      _showMsg('Este cliente está inactivo, no puedes crear facturas',
+          isError: true);
+      return;
+    }
     if (_cart.isEmpty) {
       _showMsg('Agrega al menos un producto', isError: true);
       return;

@@ -25,7 +25,8 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
   final _customerService = CustomerService();
 
   Map<String, dynamic>? _client;
-  List<Map<String, dynamic>> _invoices = [];
+  List<Map<String, dynamic>> _invoices = [];      // todas, para validaciones
+  List<Map<String, dynamic>> _invoicesPreview = []; // solo 5, para mostrar en UI
   bool _isLoading = true;
   String _userRole = ''; // ← agregado
 
@@ -48,15 +49,14 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
       final client = await _customerService.getClientById(widget.customerId);
       List<Map<String, dynamic>> invoices = [];
       if (client['invoices'] != null) {
-        invoices = List<Map<String, dynamic>>.from(client['invoices'])
-            .take(5)
-            .toList();
+        invoices = List<Map<String, dynamic>>.from(client['invoices']);
       }
       if (mounted) {
         setState(() {
-          _client   = client;
-          _invoices = invoices;
-          _isLoading = false;
+          _client          = client;
+          _invoices        = invoices;
+          _invoicesPreview = invoices.take(5).toList();
+          _isLoading       = false;
         });
       }
     } catch (_) {
@@ -126,6 +126,17 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
   Future<void> _toggleStatus() async {
     final active = _client?['status'] == true;
     final id = widget.customerId;
+
+    if (active) {
+      final tienePendientes = _invoices
+          .any((inv) => inv['status'] == AppConstants.invoicePending);
+      if (tienePendientes) {
+        _showMsg('Facturas pendientes, no puedes desactivar este cliente',
+            isError: true);
+        return;
+      }
+    }
+
     try {
       await _customerService.changeClientStatus(id, !active);
       _showMsg(active ? 'Cliente desactivado' : 'Cliente activado');
@@ -454,7 +465,7 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
 
   Widget _buildInvoiceList(AppColorScheme cs) {
     return Column(
-      children: _invoices.map((inv) {
+      children: _invoicesPreview.map((inv) {
         final status = inv['status'] ?? '';
         final total  = (inv['total'] ?? 0).toDouble();
         return Container(
@@ -498,21 +509,28 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
   }
 
   Widget _buildCreateButton(AppColorScheme cs) {
+    final active = _client?['status'] == true || _client?['status'] == 1;
     return Container(
       color: cs.card,
       padding: const EdgeInsets.fromLTRB(14, 8, 14, 16),
       child: SizedBox(
         width: double.infinity,
         child: ElevatedButton.icon(
-          onPressed: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                  builder: (_) =>
-                      NewOrderScreen(preselectedCustomer: _client))),
+          onPressed: !active
+              ? () => _showMsg(
+                  'Este cliente está inactivo, no puedes crear facturas',
+                  isError: true)
+              : () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                      builder: (_) =>
+                          NewOrderScreen(preselectedCustomer: _client))),
           icon: const Icon(Icons.receipt_long_outlined, size: 20),
-          label: const Text('Crear factura a este cliente'),
+          label: Text(active
+              ? 'Crear factura a este cliente'
+              : 'Cliente inactivo'),
           style: ElevatedButton.styleFrom(
-            backgroundColor: AppColors.primary,
+            backgroundColor: active ? AppColors.primary : cs.textHint,
             foregroundColor: Colors.white,
             padding: const EdgeInsets.symmetric(vertical: 14),
             shape: RoundedRectangleBorder(

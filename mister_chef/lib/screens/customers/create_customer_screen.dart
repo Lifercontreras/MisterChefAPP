@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:geocoding/geocoding.dart';
 import '../../config/app_colors.dart';
 import '../../services/customer_service.dart';
 import '../../services/employee_service.dart';
@@ -139,6 +140,32 @@ class _CreateCustomerScreenState extends State<CreateCustomerScreen> {
         _latCtrl.text = position.latitude.toStringAsFixed(7);
         _lngCtrl.text = position.longitude.toStringAsFixed(7);
       });
+
+      // Geocodificación inversa: convierte lat/lng en una dirección legible.
+      try {
+        final placemarks = await placemarkFromCoordinates(
+            position.latitude, position.longitude);
+        if (placemarks.isNotEmpty) {
+          final p = placemarks.first;
+          final calle = p.thoroughfare?.isNotEmpty == true
+              ? p.thoroughfare!
+              : (p.street ?? '');
+          final numero = p.subThoroughfare ?? '';
+          final partes = [
+            if (calle.isNotEmpty) calle,
+            if (numero.isNotEmpty) '#$numero',
+          ];
+          final direccion = partes.isNotEmpty
+              ? partes.join(' ')
+              : (p.street ?? p.locality ?? '');
+          if (direccion.isNotEmpty && mounted) {
+            setState(() => _addressCtrl.text = direccion);
+          }
+        }
+      } catch (_) {
+        // Si falla la geocodificación, el usuario puede escribir la dirección manualmente.
+      }
+
       if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
         content: Text('Ubicación obtenida correctamente'),
         backgroundColor: AppColors.statusSuccess,

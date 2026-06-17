@@ -4,6 +4,8 @@ import '../../config/app_routes.dart';
 import '../../config/constants.dart';
 import '../../services/auth_service.dart';
 import '../../services/order_service.dart';
+import '../../services/employee_service.dart';
+import '../../services/route_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -12,8 +14,10 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _authService  = AuthService();
-  final _orderService = OrderService();
+  final _authService     = AuthService();
+  final _orderService    = OrderService();
+  final _employeeService = EmployeeService();
+  final _routeService    = RouteService();
 
   String _userName     = '';
   String _userRole     = '';
@@ -22,6 +26,8 @@ class _HomeScreenState extends State<HomeScreen> {
   int    _pedidosHoy        = 0;
   double _ventasHoy         = 0;
   int    _clientesVisitados = 0;
+  int    _totalEmpleados    = 0;
+  int    _totalParadas      = 0;
 
   List<Map<String, dynamic>> _ultimosPedidos = [];
   bool _isLoading = true;
@@ -41,11 +47,33 @@ class _HomeScreenState extends State<HomeScreen> {
 
       Map<String, dynamic> stats = {};
       List<Map<String, dynamic>> pedidos = [];
+      int empleados = 0;
+      int paradas   = 0;
+
       try {
         stats   = await _orderService.getTodayStats();
         pedidos = await _orderService.getInvoices();
         pedidos = pedidos.take(5).toList();
       } catch (_) {}
+
+      // Empleados — solo para admin
+      if (tipo == AppConstants.roleAdministrador) {
+        try {
+          final lista = await _employeeService.getEmployees();
+          empleados = lista.length;
+        } catch (_) {}
+      }
+
+      // Paradas — solo para vendedor
+      if (tipo == AppConstants.roleVendedor) {
+        try {
+          final rutas = await _routeService.getRoutes();
+          if (rutas.isNotEmpty) {
+            final clients = rutas.first['clients'] as List? ?? [];
+            paradas = clients.length;
+          }
+        } catch (_) {}
+      }
 
       if (mounted) {
         setState(() {
@@ -55,6 +83,8 @@ class _HomeScreenState extends State<HomeScreen> {
           _pedidosHoy        = stats['total_pedidos']      ?? 0;
           _ventasHoy         = (stats['total_ventas']      ?? 0).toDouble();
           _clientesVisitados = stats['clientes_visitados'] ?? 0;
+          _totalEmpleados    = empleados;
+          _totalParadas      = paradas;
           _ultimosPedidos    = pedidos;
           _isLoading         = false;
         });
@@ -261,13 +291,13 @@ class _HomeScreenState extends State<HomeScreen> {
             {'num': '$_pedidosHoy',           'lbl': 'Pedidos totales'},
             {'num': _formatMoneda(_ventasHoy), 'lbl': 'Ventas totales'},
             {'num': '$_clientesVisitados',     'lbl': 'Confirmados'},
-            {'num': '—',                       'lbl': 'Empleados'},
+            {'num': '$_totalEmpleados',        'lbl': 'Empleados'},
           ]
         : [
             {'num': '$_pedidosHoy',           'lbl': 'Pedidos hoy'},
             {'num': _formatMoneda(_ventasHoy), 'lbl': 'Ventas del día'},
             {'num': '$_clientesVisitados',     'lbl': 'Confirmados'},
-            {'num': '—',                       'lbl': 'Paradas'},
+            {'num': '$_totalParadas',          'lbl': 'Paradas'},
           ];
 
     return Padding(
@@ -318,6 +348,7 @@ class _HomeScreenState extends State<HomeScreen> {
       {'icon': Icons.badge_outlined,        'title': 'Empleados',    'desc': 'Gestión de personal',   'route': AppRoutes.employees},
       {'icon': Icons.inventory_2_outlined,  'title': 'Productos',    'desc': 'Inventario',            'route': AppRoutes.products},
       {'icon': Icons.map_outlined,          'title': 'Mapa en vivo', 'desc': 'Domiciliarios activos', 'route': AppRoutes.deliveryMap},
+      {'icon': Icons.alt_route_outlined,    'title': 'Rutas',        'desc': 'Distribuir clientes',   'route': AppRoutes.routeAdmin},
       {'icon': Icons.smart_toy_outlined,    'title': 'Asistente',    'desc': 'Chatbot IA',            'route': AppRoutes.chatbot},
     ];
 

@@ -12,6 +12,7 @@ import 'screens/orders/orders_screen.dart';
 import 'screens/orders/new_order_screen.dart';
 import 'screens/orders/order_detail_screen.dart';
 import 'screens/route/route_screen.dart';
+import 'screens/route/route_admin_screen.dart';
 import 'screens/customers/customers_screen.dart';
 import 'screens/customers/customer_detail_screen.dart';
 import 'screens/admin/employees_screen.dart';
@@ -22,13 +23,21 @@ import 'screens/admin/products_screen.dart';
 import 'screens/admin/create_product_screen.dart';
 import 'screens/admin/delivery_map_screen.dart';
 
+/// Punto de entrada principal de la aplicación Mister Chef.
+///
+/// Inicializa las preferencias de accesibilidad antes de lanzar la UI,
+/// garantizando que el tema (claro/oscuro), la fuente y la escala de texto
+/// se apliquen desde el primer frame.
 Future<void> main() async {
+  // Asegura que los bindings de Flutter estén listos antes de operaciones async.
   WidgetsFlutterBinding.ensureInitialized();
 
+  // Carga preferencias de accesibilidad guardadas por el usuario.
   final accessibility = AccessibilityProvider();
   await accessibility.loadPreferences();
 
   runApp(
+    // Provee el estado de accesibilidad a todo el árbol de widgets.
     ChangeNotifierProvider.value(
       value: accessibility,
       child: const MisterChefApp(),
@@ -36,6 +45,14 @@ Future<void> main() async {
   );
 }
 
+/// Widget raíz de la aplicación.
+///
+/// Configura el [MaterialApp] con:
+/// - Temas claro/oscuro dinámicos según preferencias del usuario.
+/// - Fuente especial para dislexia (Lexend) si está activada.
+/// - Escala de texto accesible mediante [TextScaler].
+/// - Filtro de saturación de colores para diferentes necesidades visuales.
+/// - Tabla de rutas nombradas para navegación entre pantallas.
 class MisterChefApp extends StatelessWidget {
   const MisterChefApp({super.key});
 
@@ -46,17 +63,25 @@ class MisterChefApp extends StatelessWidget {
     return MaterialApp(
       title: 'Mister Chef',
       debugShowCheckedModeBanner: false,
-      theme:     AppTheme.lightTheme(dyslexiaFont: accessibility.dyslexiaFont), 
-      darkTheme: AppTheme.darkTheme(dyslexiaFont: accessibility.dyslexiaFont),  
+
+      // Tema claro con soporte opcional de fuente para dislexia.
+      theme:     AppTheme.lightTheme(dyslexiaFont: accessibility.dyslexiaFont),
+      // Tema oscuro con soporte opcional de fuente para dislexia.
+      darkTheme: AppTheme.darkTheme(dyslexiaFont: accessibility.dyslexiaFont),
+      // Alterna entre tema claro y oscuro según la preferencia guardada.
       themeMode: accessibility.themeMode,
+
+      // Pantalla inicial: splash de carga.
       initialRoute: AppRoutes.splash,
 
-      // ── builder aplica fontScale y saturación a TODA la app
+      // Aplica filtro de saturación y escala de fuente a TODA la aplicación.
       builder: (context, child) {
         final accessibility = context.watch<AccessibilityProvider>();
         return ColorFiltered(
+          // Matriz de color para ajustar saturación (normal, alta, baja, gris).
           colorFilter: ColorFilter.matrix(accessibility.saturationMatrix),
           child: MediaQuery(
+            // Escala el texto globalmente según la preferencia del usuario.
             data: MediaQuery.of(context).copyWith(
               textScaler: TextScaler.linear(accessibility.fontScale),
             ),
@@ -65,6 +90,7 @@ class MisterChefApp extends StatelessWidget {
         );
       },
 
+      // Registro de todas las rutas nombradas de la aplicación.
       routes: {
         AppRoutes.splash        : (_) => const SplashScreen(),
         AppRoutes.login         : (_) => const LoginScreen(),
@@ -73,6 +99,7 @@ class MisterChefApp extends StatelessWidget {
         AppRoutes.orders        : (_) => const OrdersScreen(),
         AppRoutes.newOrder      : (_) => const NewOrderScreen(),
         AppRoutes.route         : (_) => const RouteScreen(),
+        AppRoutes.routeAdmin    : (_) => const RouteAdminScreen(),
         AppRoutes.customers     : (_) => const CustomersScreen(),
         AppRoutes.createCustomer: (_) => const CreateCustomerScreen(),
         AppRoutes.accessibility : (_) => const AccessibilityScreen(),
