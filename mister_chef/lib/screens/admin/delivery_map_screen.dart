@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../config/app_colors.dart';
 import '../../config/app_routes.dart';
+import '../../services/api_service.dart';
 import '../../services/route_service.dart';
 import '../../widgets/role_bottom_nav.dart';
 
@@ -20,6 +21,10 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
   final Set<Marker> _markers = {};
   List<Map<String, dynamic>> _domiciliarios = [];
   bool _isLoading = true;
+
+  // ── Estado del último refresco
+  String? _errorMessage;
+  DateTime? _lastSuccessfulRefresh;
 
   // ── Colores para distinguir cada domiciliario en el mapa
   final List<double> _markerHues = [
@@ -55,15 +60,27 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
   Future<void> _loadLocations() async {
     try {
       final data = await _routeService.getActiveLocations();
-      if (mounted) {
-        setState(() {
-          _domiciliarios = data;
-          _isLoading     = false;
-        });
-        _buildMarkers();
-      }
+      if (!mounted) return;
+      setState(() {
+        _domiciliarios = data;
+        _isLoading = false;
+        _errorMessage = null;
+        _lastSuccessfulRefresh = DateTime.now();
+      });
+      _buildMarkers();
+    } on ApiException catch (e) {
+      // Conserva los marcadores y la lista anteriores.
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = e.message;
+      });
     } catch (_) {
-      if (mounted) setState(() => _isLoading = false);
+      if (!mounted) return;
+      setState(() {
+        _isLoading = false;
+        _errorMessage = 'No se pudieron cargar las ubicaciones.';
+      });
     }
   }
 
@@ -71,12 +88,12 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
     _markers.clear();
 
     for (int i = 0; i < _domiciliarios.length; i++) {
-      final d   = _domiciliarios[i];
+      final d = _domiciliarios[i];
       final lat = double.tryParse(d['latitude'].toString());
       final lng = double.tryParse(d['longitude'].toString());
       if (lat == null || lng == null) continue;
 
-      final hue  = _markerHues[i % _markerHues.length];
+      final hue = _markerHues[i % _markerHues.length];
       final name = d['name'] ?? 'Domiciliario';
 
       _markers.add(
@@ -86,7 +103,7 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
           icon: BitmapDescriptor.defaultMarkerWithHue(hue),
           infoWindow: InfoWindow(
             title: name,
-            snippet: _formatLastUpdate(d['last_update']),
+            snippet: _timeAgo(d['last_update']) ?? '',
           ),
         ),
       );
@@ -95,15 +112,79 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
     setState(() {});
   }
 
-  String _formatLastUpdate(String? lastUpdate) {
-    if (lastUpdate == null) return 'Sin actualización';
-    final dt = DateTime.tryParse(lastUpdate);
-    if (dt == null) return 'Sin actualización';
+  /// Devuelve "hace X min" a partir de `last_update`, o `null` si el valor
+  /// no puede parsearse (así no se inventa una hora de actualización).
+  String? _timeAgo(dynamic lastUpdate) {
+    if (lastUpdate == null) return null;
+    final dt = DateTime.tryParse(lastUpdate.toString());
+    if (dt == null) return null;
     final diff = DateTime.now().difference(dt);
-    if (diff.inMinutes < 1)  return 'Ahora mismo';
-    if (diff.inMinutes < 60) return 'Hace ${diff.inMinutes} min';
-    if (diff.inHours < 24)   return 'Hace ${diff.inHours}h';
-    return 'Hace ${diff.inDays}d';
+    if (diff.isNegative || diff.inMinutes < 1) return 'hace menos de 1 min';
+    if (diff.inMinutes < 60) return 'hace ${diff.inMinutes} min';
+    if (diff.inHours < 24) return 'hace ${diff.inHours} h';
+    return 'hace ${diff.inDays} d';
+  }
+
+  /// Hora local en formato HH:mm para el banner de error.
+  String _formatTime(DateTime dt) {
+    final hh = dt.hour.toString().padLeft(2, '0');
+    final mm = dt.minute.toString().padLeft(2, '0');
+    return '$hh:$mm';
+  }
+
+  /// Banner visible con el error y la hora del último refresco exitoso.
+  Widget _buildErrorBanner() {
+    final last = _lastSuccessfulRefresh;
+    final lastText = last == null
+        ? 'Aún no hay un refresco exitoso'
+        : 'Última actualización exitosa: ${_formatTime(last)}';
+
+    return Semantics(
+      liveRegion: true,
+      container: true,
+      label: 'Error al actualizar el mapa: $_errorMessage. $lastText',
+      child: ExcludeSemantics(
+        child: Container(
+          width: double.infinity,
+          color: AppColors.chipErrorBg,
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(
+                Icons.cloud_off,
+                color: AppColors.statusError,
+                size: 18,
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      _errorMessage!,
+                      style: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: AppColors.statusError,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      lastText,
+                      style: const TextStyle(
+                        fontSize: 10,
+                        color: AppColors.textSecondaryLight,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   // ── Centrar mapa en un domiciliario al tocar su tarjeta
@@ -113,18 +194,7 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
     if (lat == null || lng == null) return;
 
     final controller = await _mapController.future;
-    controller.animateCamera(
-      CameraUpdate.newLatLngZoom(LatLng(lat, lng), 16),
-    );
-  }
-
-  void _showMsg(String msg, {bool isError = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor:
-          isError ? AppColors.statusError : AppColors.statusSuccess,
-      behavior: SnackBarBehavior.floating,
-    ));
+    controller.animateCamera(CameraUpdate.newLatLngZoom(LatLng(lat, lng), 16));
   }
 
   Color _dotColor(int index) {
@@ -161,8 +231,10 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
                     Row(
                       children: [
                         IconButton(
-                          icon: const Icon(Icons.arrow_back,
-                              color: Colors.white),
+                          icon: const Icon(
+                            Icons.arrow_back,
+                            color: Colors.white,
+                          ),
                           onPressed: () => Navigator.pop(context),
                           padding: EdgeInsets.zero,
                           constraints: const BoxConstraints(),
@@ -171,9 +243,10 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
                         const Text(
                           'Domiciliarios en mapa',
                           style: TextStyle(
-                              fontSize: 18,
-                              fontWeight: FontWeight.w500,
-                              color: Colors.white),
+                            fontSize: 18,
+                            fontWeight: FontWeight.w500,
+                            color: Colors.white,
+                          ),
                         ),
                       ],
                     ),
@@ -185,22 +258,28 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
                       },
                       child: Container(
                         padding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 6),
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
                         decoration: BoxDecoration(
-                          color: Colors.white.withOpacity(0.2),
+                          color: Colors.white.withValues(alpha: 0.2),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Row(
                           children: [
-                            const Icon(Icons.refresh,
-                                color: Colors.white, size: 14),
+                            const Icon(
+                              Icons.refresh,
+                              color: Colors.white,
+                              size: 14,
+                            ),
                             const SizedBox(width: 4),
                             Text(
                               '${_domiciliarios.length} activos',
                               style: const TextStyle(
-                                  fontSize: 12,
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.w500),
+                                fontSize: 12,
+                                color: Colors.white,
+                                fontWeight: FontWeight.w500,
+                              ),
                             ),
                           ],
                         ),
@@ -212,6 +291,9 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
             ),
           ),
 
+          // ── Banner de error (se oculta cuando el refresco vuelve a funcionar)
+          if (_errorMessage != null) _buildErrorBanner(),
+
           // ── Google Maps
           SizedBox(
             height: 300,
@@ -220,13 +302,12 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
                 target: LatLng(8.2340, -73.2648), // Ocaña por defecto
                 zoom: 12,
               ),
-              onMapCreated: (controller) =>
-                  _mapController.complete(controller),
+              onMapCreated: (controller) => _mapController.complete(controller),
               markers: _markers,
-              myLocationEnabled:       false,
+              myLocationEnabled: false,
               myLocationButtonEnabled: false,
-              zoomControlsEnabled:     true,
-              mapToolbarEnabled:       false,
+              zoomControlsEnabled: true,
+              mapToolbarEnabled: false,
             ),
           ),
 
@@ -241,8 +322,9 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
                 Text(
                   'Actualización automática cada 30 segundos',
                   style: TextStyle(
-                      fontSize: 11,
-                      color: AppColors.textHintLight.withOpacity(0.8)),
+                    fontSize: 11,
+                    color: AppColors.textHintLight.withValues(alpha: 0.8),
+                  ),
                 ),
               ],
             ),
@@ -254,143 +336,147 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
           Expanded(
             child: _isLoading
                 ? const Center(
-                    child: CircularProgressIndicator(
-                        color: AppColors.primary))
+                    child: CircularProgressIndicator(color: AppColors.primary),
+                  )
                 : _domiciliarios.isEmpty
-                    ? Center(
-                        child: Column(
-                          mainAxisSize: MainAxisSize.min,
-                          children: [
-                            Icon(Icons.location_off_outlined,
-                                size: 52,
-                                color: AppColors.textHintLight
-                                    .withOpacity(0.4)),
-                            const SizedBox(height: 12),
-                            const Text('No hay domiciliarios activos',
-                                style: TextStyle(
-                                    fontSize: 14,
-                                    color: AppColors.textHintLight)),
-                            const SizedBox(height: 6),
-                            Text(
-                              'Los domiciliarios aparecerán aquí cuando inicien su jornada',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                  fontSize: 11,
-                                  color: AppColors.textHintLight
-                                      .withOpacity(0.6)),
-                            ),
-                          ],
+                ? Center(
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(
+                          Icons.location_off_outlined,
+                          size: 52,
+                          color: AppColors.textHintLight.withValues(alpha: 0.4),
                         ),
-                      )
-                    : RefreshIndicator(
-                        color: AppColors.primary,
-                        onRefresh: _loadLocations,
-                        child: ListView.separated(
-                          padding: const EdgeInsets.all(14),
-                          itemCount: _domiciliarios.length,
-                          separatorBuilder: (_, __) =>
-                              const SizedBox(height: 8),
-                          itemBuilder: (_, i) {
-                            final d    = _domiciliarios[i];
-                            final name = d['name'] ?? 'Domiciliario';
-                            final last = _formatLastUpdate(
-                                d['last_update']);
+                        const SizedBox(height: 12),
+                        const Text(
+                          'No hay domiciliarios activos',
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: AppColors.textHintLight,
+                          ),
+                        ),
+                        const SizedBox(height: 6),
+                        Text(
+                          'Los domiciliarios aparecerán aquí cuando inicien su jornada',
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            fontSize: 11,
+                            color: AppColors.textHintLight.withValues(
+                              alpha: 0.6,
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  )
+                : RefreshIndicator(
+                    color: AppColors.primary,
+                    onRefresh: _loadLocations,
+                    child: ListView.separated(
+                      padding: const EdgeInsets.all(14),
+                      itemCount: _domiciliarios.length,
+                      separatorBuilder: (_, _) => const SizedBox(height: 8),
+                      itemBuilder: (_, i) {
+                        final d = _domiciliarios[i];
+                        final name = d['name'] ?? 'Domiciliario';
+                        final timeAgo = _timeAgo(d['last_update']);
 
-                            return GestureDetector(
-                              onTap: () => _focusOnDelivery(d),
-                              child: Container(
-                                padding: const EdgeInsets.all(12),
-                                decoration: BoxDecoration(
-                                  color: Colors.white,
-                                  borderRadius: BorderRadius.circular(12),
-                                  border: Border.all(
-                                      color: AppColors.borderLight),
+                        return GestureDetector(
+                          onTap: () => _focusOnDelivery(d),
+                          child: Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white,
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(color: AppColors.borderLight),
+                            ),
+                            child: Row(
+                              children: [
+                                // Indicador de color del marcador
+                                Container(
+                                  width: 36,
+                                  height: 36,
+                                  decoration: BoxDecoration(
+                                    color: _dotColor(i).withValues(alpha: 0.15),
+                                    shape: BoxShape.circle,
+                                  ),
+                                  child: Center(
+                                    child: Icon(
+                                      Icons.delivery_dining,
+                                      color: _dotColor(i),
+                                      size: 20,
+                                    ),
+                                  ),
                                 ),
-                                child: Row(
-                                  children: [
-                                    // Indicador de color del marcador
-                                    Container(
-                                      width: 36, height: 36,
-                                      decoration: BoxDecoration(
-                                        color: _dotColor(i)
-                                            .withOpacity(0.15),
-                                        shape: BoxShape.circle,
-                                      ),
-                                      child: Center(
-                                        child: Icon(
-                                            Icons.delivery_dining,
-                                            color: _dotColor(i),
-                                            size: 20),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
+                                const SizedBox(width: 12),
 
-                                    // Info
-                                    Expanded(
-                                      child: Column(
-                                        crossAxisAlignment:
-                                            CrossAxisAlignment.start,
-                                        children: [
-                                          Text(name,
-                                              style: const TextStyle(
-                                                  fontSize: 13,
-                                                  fontWeight:
-                                                      FontWeight.w500,
-                                                  color: AppColors
-                                                      .textPrimaryLight)),
-                                          Text(
-                                            'Doc: ${d['document_employee'] ?? ''}',
-                                            style: const TextStyle(
-                                                fontSize: 10,
-                                                color: AppColors
-                                                    .textHintLight),
-                                          ),
-                                        ],
-                                      ),
-                                    ),
-
-                                    // Última actualización + flecha
-                                    Column(
-                                      crossAxisAlignment:
-                                          CrossAxisAlignment.end,
-                                      children: [
-                                        Container(
-                                          padding:
-                                              const EdgeInsets.symmetric(
-                                                  horizontal: 8,
-                                                  vertical: 3),
-                                          decoration: BoxDecoration(
-                                            color: AppColors.chipSuccessBg,
-                                            borderRadius:
-                                                BorderRadius.circular(20),
-                                          ),
-                                          child: Text('Activo',
-                                              style: const TextStyle(
-                                                  fontSize: 9,
-                                                  fontWeight:
-                                                      FontWeight.w500,
-                                                  color: AppColors
-                                                      .statusSuccess)),
+                                // Info
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        name,
+                                        style: const TextStyle(
+                                          fontSize: 13,
+                                          fontWeight: FontWeight.w500,
+                                          color: AppColors.textPrimaryLight,
                                         ),
-                                        const SizedBox(height: 4),
-                                        Text(last,
-                                            style: const TextStyle(
-                                                fontSize: 9,
-                                                color: AppColors
-                                                    .textHintLight)),
-                                      ],
-                                    ),
+                                      ),
+                                      Text(
+                                        'Doc: ${d['document_employee'] ?? ''}',
+                                        style: const TextStyle(
+                                          fontSize: 10,
+                                          color: AppColors.textHintLight,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
 
-                                    const SizedBox(width: 6),
-                                    const Icon(Icons.my_location,
-                                        color: AppColors.primary, size: 18),
+                                // Última actualización + flecha
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.end,
+                                  children: [
+                                    if (timeAgo != null)
+                                      Container(
+                                        padding: const EdgeInsets.symmetric(
+                                          horizontal: 8,
+                                          vertical: 3,
+                                        ),
+                                        decoration: BoxDecoration(
+                                          color: AppColors.chipSuccessBg,
+                                          borderRadius: BorderRadius.circular(
+                                            20,
+                                          ),
+                                        ),
+                                        child: Text(
+                                          timeAgo,
+                                          style: const TextStyle(
+                                            fontSize: 9,
+                                            fontWeight: FontWeight.w500,
+                                            color: AppColors.statusSuccess,
+                                          ),
+                                        ),
+                                      ),
                                   ],
                                 ),
-                              ),
-                            );
-                          },
-                        ),
-                      ),
+
+                                const SizedBox(width: 6),
+                                const Icon(
+                                  Icons.my_location,
+                                  color: AppColors.primary,
+                                  size: 18,
+                                ),
+                              ],
+                            ),
+                          ),
+                        );
+                      },
+                    ),
+                  ),
           ),
         ],
       ),

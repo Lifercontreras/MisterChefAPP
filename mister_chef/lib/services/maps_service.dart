@@ -1,23 +1,14 @@
-import 'dart:async';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../config/app_colors.dart';
-import 'location_service.dart';
 
 /// MapsService centraliza todo lo relacionado con:
 /// 1. Permisos y obtención de GPS
 /// 2. Construcción de marcadores y polilíneas para Google Maps
-/// 3. Envío periódico de ubicación al servidor (solo vendedor)
 class MapsService {
   static final MapsService _instance = MapsService._internal();
   factory MapsService() => _instance;
   MapsService._internal();
-
-  final _locationService = LocationService();
-
-  Timer? _trackingTimer;
-  bool   _isTracking = false;
-  bool   get isTracking => _isTracking;
 
   // ══════════════════════════════════════════
   // PERMISOS Y POSICIÓN GPS
@@ -62,59 +53,6 @@ class MapsService {
   }
 
   // ══════════════════════════════════════════
-  // TRACKING PERIÓDICO (solo Vendedor)
-  // Envía POST /location cada 30 segundos
-  // ══════════════════════════════════════════
-
-  /// Inicia el envío periódico de ubicación al servidor Laravel.
-  /// Llamar al entrar a RouteScreen (solo vendedor).
-  Future<void> startTracking({int intervalSeconds = 30}) async {
-    if (_isTracking) return;
-
-    final hasPermission = await checkAndRequestPermission();
-    if (!hasPermission) return;
-
-    _isTracking = true;
-
-    // Enviar posición inmediatamente
-    await _sendCurrentLocation();
-
-    // Luego repetir cada N segundos
-    _trackingTimer = Timer.periodic(
-      Duration(seconds: intervalSeconds),
-      (_) => _sendCurrentLocation(),
-    );
-  }
-
-  /// Detiene el tracking y notifica al servidor que el vendedor
-  /// terminó su jornada (PATCH /location/deactivate).
-  Future<void> stopTracking() async {
-    _trackingTimer?.cancel();
-    _trackingTimer = null;
-    _isTracking    = false;
-
-    try {
-      await _locationService.deactivateLocation();
-    } catch (_) {
-      // Si falla el servidor, igual detenemos el tracking local
-    }
-  }
-
-  Future<void> _sendCurrentLocation() async {
-    try {
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-      await _locationService.sendLocation(
-        latitude:  position.latitude,
-        longitude: position.longitude,
-      );
-    } catch (_) {
-      // Silencioso — se reintenta en el siguiente intervalo
-    }
-  }
-
-  // ══════════════════════════════════════════
   // CONSTRUCCIÓN DE MARCADORES
   // ══════════════════════════════════════════
 
@@ -128,8 +66,8 @@ class MapsService {
     final markers = <Marker>{};
 
     for (int i = 0; i < clients.length; i++) {
-      final c   = clients[i];
-      final lat = double.tryParse(c['latitude']?.toString()  ?? '');
+      final c = clients[i];
+      final lat = double.tryParse(c['latitude']?.toString() ?? '');
       final lng = double.tryParse(c['longitude']?.toString() ?? '');
       if (lat == null || lng == null) continue;
 
@@ -140,10 +78,7 @@ class MapsService {
           markerId: MarkerId('client_$i'),
           position: LatLng(lat, lng),
           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueRed),
-          infoWindow: InfoWindow(
-            title:   nombre,
-            snippet: c['address'] ?? '',
-          ),
+          infoWindow: InfoWindow(title: nombre, snippet: c['address'] ?? ''),
           onTap: () => onTap(c),
         ),
       );
@@ -162,8 +97,8 @@ class MapsService {
     final markers = <Marker>{};
 
     for (int i = 0; i < employees.length; i++) {
-      final e   = employees[i];
-      final lat = double.tryParse(e['latitude']?.toString()  ?? '');
+      final e = employees[i];
+      final lat = double.tryParse(e['latitude']?.toString() ?? '');
       final lng = double.tryParse(e['longitude']?.toString() ?? '');
       if (lat == null || lng == null) continue;
 
@@ -173,7 +108,7 @@ class MapsService {
           position: LatLng(lat, lng),
           icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueBlue),
           infoWindow: InfoWindow(
-            title:   e['name'] ?? 'Domiciliario',
+            title: e['name'] ?? 'Domiciliario',
             snippet: _formatLastUpdate(e['last_update']),
           ),
           onTap: () => onTap(e),
@@ -193,7 +128,7 @@ class MapsService {
     final points = <LatLng>[];
 
     for (final c in clients) {
-      final lat = double.tryParse(c['latitude']?.toString()  ?? '');
+      final lat = double.tryParse(c['latitude']?.toString() ?? '');
       final lng = double.tryParse(c['longitude']?.toString() ?? '');
       if (lat == null || lng == null) continue;
       points.add(LatLng(lat, lng));
@@ -204,10 +139,10 @@ class MapsService {
     return {
       Polyline(
         polylineId: const PolylineId('ruta_vendedor'),
-        points:     points,
-        color:      AppColors.mapRoute,
-        width:      3,
-        patterns:   [PatternItem.dash(12), PatternItem.gap(6)],
+        points: points,
+        color: AppColors.mapRoute,
+        width: 3,
+        patterns: [PatternItem.dash(12), PatternItem.gap(6)],
       ),
     };
   }
@@ -222,9 +157,7 @@ class MapsService {
     LatLng target, {
     double zoom = 15,
   }) async {
-    await controller.animateCamera(
-      CameraUpdate.newLatLngZoom(target, zoom),
-    );
+    await controller.animateCamera(CameraUpdate.newLatLngZoom(target, zoom));
   }
 
   /// Ajusta la cámara para mostrar todos los marcadores (bounds).
@@ -244,8 +177,8 @@ class MapsService {
     double maxLng = points.first.longitude;
 
     for (final p in points) {
-      if (p.latitude  < minLat) minLat = p.latitude;
-      if (p.latitude  > maxLat) maxLat = p.latitude;
+      if (p.latitude < minLat) minLat = p.latitude;
+      if (p.latitude > maxLat) maxLat = p.latitude;
       if (p.longitude < minLng) minLng = p.longitude;
       if (p.longitude > maxLng) maxLng = p.longitude;
     }
@@ -269,7 +202,7 @@ class MapsService {
   static double? parseCoord(dynamic value) {
     if (value == null) return null;
     if (value is double) return value;
-    if (value is int)    return value.toDouble();
+    if (value is int) return value.toDouble();
     return double.tryParse(value.toString());
   }
 
@@ -278,14 +211,8 @@ class MapsService {
     final dt = DateTime.tryParse(dateStr);
     if (dt == null) return '';
     final diff = DateTime.now().difference(dt.toLocal());
-    if (diff.inMinutes < 1)  return 'Ahora mismo';
+    if (diff.inMinutes < 1) return 'Ahora mismo';
     if (diff.inMinutes < 60) return 'Hace ${diff.inMinutes} min';
     return 'Hace ${diff.inHours}h';
   }
 }
-
-
-
-
-
-

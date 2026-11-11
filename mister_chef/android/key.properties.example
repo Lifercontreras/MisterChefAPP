@@ -1,0 +1,9 @@
+# Copia este archivo como android/key.properties y completa los valores reales.
+# Nunca versiones key.properties ni tu keystore (.jks / .keystore).
+#
+# storeFile se resuelve relativo a android/app; usa una ruta absoluta para
+# evitar ambigüedades.
+storeFile=C:/Users/TU_USUARIO/mister-chef-release.jks
+storePassword=TU_STORE_PASSWORD
+keyAlias=TU_KEY_ALIAS
+keyPassword=TU_KEY_PASSWORD

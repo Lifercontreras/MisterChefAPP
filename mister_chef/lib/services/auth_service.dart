@@ -1,6 +1,8 @@
 import 'package:shared_preferences/shared_preferences.dart';
 import '../config/constants.dart';
 import 'api_service.dart';
+import 'location_service.dart';
+import 'tracking_service.dart';
 
 /// Servicio de autenticación de Mister Chef.
 ///
@@ -47,6 +49,8 @@ class AuthService {
       auth: false, // No requiere token previo para autenticarse.
     );
     await _saveSession(res);
+    // Una nueva sesión habilita de nuevo el aviso global de 401.
+    ApiService.resetUnauthorizedGuard();
     return Map<String, dynamic>.from(res);
   }
 
@@ -60,15 +64,30 @@ class AuthService {
 
   /// Cierra la sesión del empleado autenticado.
   ///
-  /// Intenta invalidar el token en el servidor. Si falla (ej. sin conexión),
-  /// igualmente elimina los datos locales de sesión.
+  /// Antes de borrar el token detiene el rastreo de ubicación y avisa al
+  /// servidor que deje de compartirla. Si esa llamada falla o tarda más de
+  /// 5 segundos, se ignora para no dejar al usuario atrapado.
   Future<void> logout() async {
+    // 1. Detener el stream local de posiciones (servicio en primer plano).
+    await TrackingService().stop();
+
+    // 2. Avisar al servidor que deje de compartir la ubicación, todavía
+    //    con el token vigente. Cualquier fallo se ignora.
+    try {
+      await LocationService().deactivateLocation().timeout(
+        const Duration(seconds: 5),
+      );
+    } catch (_) {
+      // Se ignora: la limpieza local es obligatoria.
+    }
+
+    // 3. Invalidar el token en el servidor y limpiar la sesión local.
     try {
       await _api.post(AppConstants.endpointLogout, {});
     } catch (_) {
       // Se ignora el error del servidor: la limpieza local es obligatoria.
     } finally {
-      await _clearSession();
+      await clearSession();
     }
   }
 
@@ -92,8 +111,8 @@ class AuthService {
   ///
   /// Construye el nombre completo concatenando name_1, name_2 y last_name_1.
   Future<void> _saveSession(dynamic res) async {
-    final prefs    = await SharedPreferences.getInstance();
-    final token    = res['token']    as String?;
+    final prefs = await SharedPreferences.getInstance();
+    final token = res['token'] as String?;
     final employee = res['employee'] as Map<String, dynamic>?;
 
     if (token != null) {
@@ -106,23 +125,28 @@ class AuthService {
 
       // Construye nombre legible: "Carlos Andrés Gómez".
       final nombre = [
-        employee['name_1']     ?? '',
-        employee['name_2']     ?? '',
+        employee['name_1'] ?? '',
+        employee['name_2'] ?? '',
         employee['last_name_1'] ?? '',
       ].where((s) => s.toString().isNotEmpty).join(' ');
 
-      await prefs.setString(AppConstants.keyEmployeeDoc,
-          employee['document_employee']?.toString() ?? '');
+      await prefs.setString(
+        AppConstants.keyEmployeeDoc,
+        employee['document_employee']?.toString() ?? '',
+      );
       await prefs.setString(AppConstants.keyUserName, nombre);
-      await prefs.setString(AppConstants.keyUserRole,
-          employee['type']?.toString() ?? '');
+      await prefs.setString(
+        AppConstants.keyUserRole,
+        employee['type']?.toString() ?? '',
+      );
     }
   }
 
   /// Elimina todos los datos de sesión del almacenamiento local.
   ///
-  /// Llamado automáticamente por [logout] y en caso de token expirado.
-  Future<void> _clearSession() async {
+  /// Llamado automáticamente por [logout] y por [ApiService] en caso de
+  /// token expirado.
+  Future<void> clearSession() async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.remove(AppConstants.keyAuthToken);
     await prefs.remove(AppConstants.keyEmployeeDoc);
@@ -147,9 +171,9 @@ class AuthService {
   Future<Map<String, String>> getUserData() async {
     final prefs = await SharedPreferences.getInstance();
     return {
-      'doc':    prefs.getString(AppConstants.keyEmployeeDoc) ?? '',
-      'nombre': prefs.getString(AppConstants.keyUserName)     ?? '',
-      'tipo':   prefs.getString(AppConstants.keyUserRole)     ?? '',
+      'doc': prefs.getString(AppConstants.keyEmployeeDoc) ?? '',
+      'nombre': prefs.getString(AppConstants.keyUserName) ?? '',
+      'tipo': prefs.getString(AppConstants.keyUserRole) ?? '',
     };
   }
 
@@ -179,10 +203,10 @@ class AuthService {
   /// Envía [newPassword] al servidor y, si tiene éxito, marca
   /// `first_login` como `false` para no volver a forzar el cambio.
   Future<void> changePassword(String newPassword) async {
-    await _api.post(
-      '/change-password',
-      {'password': newPassword, 'password_confirmation': newPassword},
-    );
+    await _api.post('/change-password', {
+      'password': newPassword,
+      'password_confirmation': newPassword,
+    });
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('first_login', false);
   }

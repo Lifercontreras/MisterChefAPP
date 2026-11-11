@@ -1,16 +1,13 @@
-import 'dart:async';
 import 'package:geolocator/geolocator.dart';
-import '../config/constants.dart';
-import '../services/location_service.dart';
 
+/// Utilidades locales de GPS para pantallas que solo necesitan mostrar la
+/// posición en el mapa.
+///
+/// El envío periódico de ubicación al servidor vive en `TrackingService`.
 class LocationHelper {
   static final LocationHelper _instance = LocationHelper._internal();
   factory LocationHelper() => _instance;
   LocationHelper._internal();
-
-  final _locationService = LocationService();
-  Timer? _timer;
-  bool _isTracking = false;
 
   // ── Verificar y pedir permisos de GPS
   Future<bool> checkAndRequestPermission() async {
@@ -41,68 +38,14 @@ class LocationHelper {
   }
 
   // ══════════════════════════════════════════
-  // Iniciar envío periódico de ubicación al servidor
-  // Llama POST /location cada 30 segundos
-  // Solo para el VENDEDOR (type = 'V')
-  // ══════════════════════════════════════════
-  Future<void> startTracking() async {
-    if (_isTracking) return;
-
-    final hasPermission = await checkAndRequestPermission();
-    if (!hasPermission) return;
-
-    _isTracking = true;
-
-    // Enviar posición inmediatamente al iniciar
-    await _sendCurrentLocation();
-
-    // Luego cada 30 segundos
-    _timer = Timer.periodic(
-      Duration(seconds: AppConstants.locationIntervalSeconds),
-      (_) => _sendCurrentLocation(),
-    );
-  }
-
-  // ── Detener el envío periódico
-  Future<void> stopTracking() async {
-    _timer?.cancel();
-    _timer = null;
-    _isTracking = false;
-
-    // Notificar al servidor que el domiciliario terminó su jornada
-    try {
-      await _locationService.deactivateLocation();
-    } catch (_) {
-      // Si falla, igual detenemos el tracking local
-    }
-  }
-
-  // ── Enviar posición actual al servidor
-  Future<void> _sendCurrentLocation() async {
-    try {
-      final position = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.high,
-      );
-      await _locationService.sendLocation(
-        latitude:  position.latitude,
-        longitude: position.longitude,
-      );
-    } catch (_) {
-      // Silencioso — si falla una actualización se reintenta en 30 seg
-    }
-  }
-
-  bool get isTracking => _isTracking;
-
-  // ══════════════════════════════════════════
   // Stream de posición en tiempo real
   // Para dibujar el rastro recorrido en el mapa
   // ══════════════════════════════════════════
   Stream<Position> getPositionStream() {
     return Geolocator.getPositionStream(
       locationSettings: const LocationSettings(
-        accuracy:          LocationAccuracy.high,
-        distanceFilter:    10, // actualiza cada 10 metros
+        accuracy: LocationAccuracy.high,
+        distanceFilter: 10, // actualiza cada 10 metros
       ),
     );
   }

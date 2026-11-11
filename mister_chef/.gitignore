@@ -43,3 +43,8 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# Variables de entorno locales: cada desarrollador crea env/prod.json
+# a partir de env/prod.example.json. Nunca se versionan credenciales.
+env/*.json
+!env/*.example.json

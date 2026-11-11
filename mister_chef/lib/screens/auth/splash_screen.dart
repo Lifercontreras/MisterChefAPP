@@ -1,7 +1,11 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import '../../config/app_colors.dart';
 import '../../config/app_routes.dart';
+import '../../config/constants.dart';
 import '../../services/auth_service.dart';
+import '../../services/tracking_service.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -25,10 +29,14 @@ class _SplashScreenState extends State<SplashScreen>
       vsync: this,
       duration: const Duration(milliseconds: 1200),
     );
-    _fadeIn  = Tween<double>(begin: 0.0, end: 1.0).animate(
-        CurvedAnimation(parent: _controller, curve: Curves.easeIn));
-    _scaleIn = Tween<double>(begin: 0.8, end: 1.0).animate(
-        CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
+    _fadeIn = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeIn));
+    _scaleIn = Tween<double>(
+      begin: 0.8,
+      end: 1.0,
+    ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutBack));
     _controller.forward();
     _checkSession();
   }
@@ -39,6 +47,17 @@ class _SplashScreenState extends State<SplashScreen>
     // Verifica si hay token guardado localmente (no llama a la API)
     final isLoggedIn = await _authService.isLoggedIn();
     if (!mounted) return;
+
+    // Si la sesión guardada es de un domiciliario, reanuda el rastreo
+    // automáticamente al abrir la app.
+    if (isLoggedIn) {
+      final userData = await _authService.getUserData();
+      if (userData['tipo'] == AppConstants.roleVendedor) {
+        unawaited(TrackingService().start());
+      }
+      if (!mounted) return;
+    }
+
     Navigator.pushReplacementNamed(
       context,
       isLoggedIn ? AppRoutes.home : AppRoutes.login,
@@ -58,19 +77,27 @@ class _SplashScreenState extends State<SplashScreen>
       body: Stack(
         children: [
           Positioned(
-            top: -80, right: -80,
+            top: -80,
+            right: -80,
             child: Container(
-              width: 280, height: 280,
+              width: 280,
+              height: 280,
               decoration: const BoxDecoration(
-                  color: AppColors.primaryDark, shape: BoxShape.circle),
+                color: AppColors.primaryDark,
+                shape: BoxShape.circle,
+              ),
             ),
           ),
           Positioned(
-            bottom: -60, left: -60,
+            bottom: -60,
+            left: -60,
             child: Container(
-              width: 200, height: 200,
+              width: 200,
+              height: 200,
               decoration: const BoxDecoration(
-                  color: AppColors.primaryDark, shape: BoxShape.circle),
+                color: AppColors.primaryDark,
+                shape: BoxShape.circle,
+              ),
             ),
           ),
           Center(
@@ -82,30 +109,37 @@ class _SplashScreenState extends State<SplashScreen>
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     Container(
-                      width: 120, height: 120,
+                      width: 120,
+                      height: 120,
                       decoration: BoxDecoration(
                         color: AppColors.accent,
                         shape: BoxShape.circle,
                         border: Border.all(
-                            color: Colors.white.withOpacity(0.25), width: 4),
+                          color: Colors.white.withOpacity(0.25),
+                          width: 4,
+                        ),
                       ),
                       child: ClipOval(
-                        child: Image.asset('assets/images/logo.png',
-                            fit: BoxFit.cover),
+                        child: Image.asset(
+                          'assets/images/logo.png',
+                          fit: BoxFit.cover,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 24),
                     RichText(
                       text: const TextSpan(
                         style: TextStyle(
-                            fontSize: 32,
-                            fontWeight: FontWeight.w500,
-                            color: Colors.white),
+                          fontSize: 32,
+                          fontWeight: FontWeight.w500,
+                          color: Colors.white,
+                        ),
                         children: [
                           TextSpan(text: 'Mister '),
                           TextSpan(
-                              text: 'Chef',
-                              style: TextStyle(color: AppColors.accent)),
+                            text: 'Chef',
+                            style: TextStyle(color: AppColors.accent),
+                          ),
                         ],
                       ),
                     ),
@@ -113,9 +147,10 @@ class _SplashScreenState extends State<SplashScreen>
                     Text(
                       'VENTAS Y DISTRIBUCIÓN',
                       style: TextStyle(
-                          fontSize: 11,
-                          letterSpacing: 2.5,
-                          color: Colors.white.withOpacity(0.65)),
+                        fontSize: 11,
+                        letterSpacing: 2.5,
+                        color: Colors.white.withOpacity(0.65),
+                      ),
                     ),
                     const SizedBox(height: 16),
                     Padding(
@@ -124,9 +159,10 @@ class _SplashScreenState extends State<SplashScreen>
                         'Pedidos, rutas e inventario inteligente\n— todo en un solo lugar',
                         textAlign: TextAlign.center,
                         style: TextStyle(
-                            fontSize: 13,
-                            color: Colors.white.withOpacity(0.45),
-                            height: 1.6),
+                          fontSize: 13,
+                          color: Colors.white.withOpacity(0.45),
+                          height: 1.6,
+                        ),
                       ),
                     ),
                     const SizedBox(height: 52),
@@ -137,14 +173,17 @@ class _SplashScreenState extends State<SplashScreen>
             ),
           ),
           Positioned(
-            bottom: 24, left: 0, right: 0,
+            bottom: 24,
+            left: 0,
+            right: 0,
             child: Text(
-              'v1.0.0  ·  Ocaña, Norte de Santander',
+              'v${AppConstants.appVersion}  ·  Ocaña, Norte de Santander',
               textAlign: TextAlign.center,
               style: TextStyle(
-                  fontSize: 10,
-                  color: Colors.white.withOpacity(0.28),
-                  letterSpacing: 1),
+                fontSize: 10,
+                color: Colors.white.withOpacity(0.28),
+                letterSpacing: 1,
+              ),
             ),
           ),
         ],
@@ -166,8 +205,9 @@ class _LoadingDotsState extends State<_LoadingDots>
   void initState() {
     super.initState();
     _ctrl = AnimationController(
-        vsync: this, duration: const Duration(milliseconds: 900))
-      ..repeat();
+      vsync: this,
+      duration: const Duration(milliseconds: 900),
+    )..repeat();
   }
 
   @override

@@ -25,7 +25,10 @@ class LocationService {
   /// Se llama después de que el usuario selecciona un departamento
   /// para cargar las ciudades disponibles en ese departamento.
   Future<List<Map<String, dynamic>>> getCities(String idDepartment) async {
-    final res = await _api.get('/cities', query: {'id_departament': idDepartment});
+    final res = await _api.get(
+      '/cities',
+      query: {'id_departament': idDepartment},
+    );
     return List<Map<String, dynamic>>.from(res);
   }
 
@@ -38,17 +41,17 @@ class LocationService {
     required double latitude,
     required double longitude,
   }) async {
-    await _api.post(
-      AppConstants.endpointLocation,
-      {'latitude': latitude, 'longitude': longitude},
-    );
+    await _api.post(AppConstants.endpointLocation, {
+      'latitude': latitude,
+      'longitude': longitude,
+    });
   }
 
   /// Desactiva el rastreo de ubicación del vendedor en el servidor.
   ///
-  /// Se llama cuando el vendedor cierra la app o desactiva manualmente
-  /// el rastreo, para que no aparezca en el mapa del administrador.
+  /// Se llama cuando el vendedor cierra la sesión, para que no aparezca
+  /// en el mapa del administrador. El back expone este endpoint como PATCH.
   Future<void> deactivateLocation() async {
-    await _api.post(AppConstants.endpointLocationDeactivate, {});
+    await _api.patch(AppConstants.endpointLocationDeactivate, {});
   }
 }

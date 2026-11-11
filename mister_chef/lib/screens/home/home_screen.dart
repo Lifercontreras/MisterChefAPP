@@ -1,4 +1,7 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
+import 'package:geolocator/geolocator.dart';
 import '../../config/app_colors.dart';
 import '../../config/app_routes.dart';
 import '../../config/constants.dart';
@@ -6,6 +9,7 @@ import '../../services/auth_service.dart';
 import '../../services/order_service.dart';
 import '../../services/employee_service.dart';
 import '../../services/route_service.dart';
+import '../../services/tracking_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -14,20 +18,21 @@ class HomeScreen extends StatefulWidget {
 }
 
 class _HomeScreenState extends State<HomeScreen> {
-  final _authService     = AuthService();
-  final _orderService    = OrderService();
+  final _authService = AuthService();
+  final _orderService = OrderService();
   final _employeeService = EmployeeService();
-  final _routeService    = RouteService();
+  final _routeService = RouteService();
+  final _tracking = TrackingService();
 
-  String _userName     = '';
-  String _userRole     = '';
+  String _userName = '';
+  String _userRole = '';
   String _userInitials = '';
 
-  int    _pedidosHoy        = 0;
-  double _ventasHoy         = 0;
-  int    _clientesVisitados = 0;
-  int    _totalEmpleados    = 0;
-  int    _totalParadas      = 0;
+  int _pedidosHoy = 0;
+  double _ventasHoy = 0;
+  int _clientesVisitados = 0;
+  int _totalEmpleados = 0;
+  int _totalParadas = 0;
 
   List<Map<String, dynamic>> _ultimosPedidos = [];
   bool _isLoading = true;
@@ -42,16 +47,16 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() => _isLoading = true);
     try {
       final userData = await _authService.getUserData();
-      final nombre   = userData['nombre'] ?? '';
-      final tipo     = userData['tipo']   ?? '';
+      final nombre = userData['nombre'] ?? '';
+      final tipo = userData['tipo'] ?? '';
 
       Map<String, dynamic> stats = {};
       List<Map<String, dynamic>> pedidos = [];
       int empleados = 0;
-      int paradas   = 0;
+      int paradas = 0;
 
       try {
-        stats   = await _orderService.getTodayStats();
+        stats = await _orderService.getTodayStats();
         pedidos = await _orderService.getInvoices();
         pedidos = pedidos.take(5).toList();
       } catch (_) {}
@@ -77,16 +82,16 @@ class _HomeScreenState extends State<HomeScreen> {
 
       if (mounted) {
         setState(() {
-          _userName          = nombre;
-          _userRole          = tipo;
-          _userInitials      = _getInitials(nombre);
-          _pedidosHoy        = stats['total_pedidos']      ?? 0;
-          _ventasHoy         = (stats['total_ventas']      ?? 0).toDouble();
+          _userName = nombre;
+          _userRole = tipo;
+          _userInitials = _getInitials(nombre);
+          _pedidosHoy = stats['total_pedidos'] ?? 0;
+          _ventasHoy = (stats['total_ventas'] ?? 0).toDouble();
           _clientesVisitados = stats['clientes_visitados'] ?? 0;
-          _totalEmpleados    = empleados;
-          _totalParadas      = paradas;
-          _ultimosPedidos    = pedidos;
-          _isLoading         = false;
+          _totalEmpleados = empleados;
+          _totalParadas = paradas;
+          _ultimosPedidos = pedidos;
+          _isLoading = false;
         });
       }
     } catch (_) {
@@ -94,7 +99,7 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
-  bool get _isAdmin    => _userRole == AppConstants.roleAdministrador;
+  bool get _isAdmin => _userRole == AppConstants.roleAdministrador;
   bool get _isVendedor => _userRole == AppConstants.roleVendedor;
 
   String _getInitials(String name) {
@@ -106,15 +111,18 @@ class _HomeScreenState extends State<HomeScreen> {
 
   String _formatRoleLabel() {
     switch (_userRole) {
-      case AppConstants.roleAdministrador: return 'Administrador';
-      case AppConstants.roleVendedor:      return 'Vendedor';
-      default: return '';
+      case AppConstants.roleAdministrador:
+        return 'Administrador';
+      case AppConstants.roleVendedor:
+        return 'Vendedor';
+      default:
+        return '';
     }
   }
 
   String _formatMoneda(double valor) {
     if (valor >= 1000000) return '\$${(valor / 1000000).toStringAsFixed(1)}M';
-    if (valor >= 1000)    return '\$${(valor / 1000).toStringAsFixed(0)}K';
+    if (valor >= 1000) return '\$${(valor / 1000).toStringAsFixed(0)}K';
     return '\$${valor.toStringAsFixed(0)}';
   }
 
@@ -124,24 +132,27 @@ class _HomeScreenState extends State<HomeScreen> {
     if (dt == null) return '';
     final diff = DateTime.now().difference(dt);
     if (diff.inMinutes < 60) return 'Hace ${diff.inMinutes} min';
-    if (diff.inHours < 24)   return 'Hace ${diff.inHours}h';
+    if (diff.inHours < 24) return 'Hace ${diff.inHours}h';
     return 'Hace ${diff.inDays}d';
   }
 
   String _clientName(Map<String, dynamic> invoice) {
     final c = invoice['client'];
     if (c == null) return 'Cliente desconocido';
-    final empresa  = c['business_name']     ?? '';
-    final nombre   = c['client_name1']      ?? '';
+    final empresa = c['business_name'] ?? '';
+    final nombre = c['client_name1'] ?? '';
     final apellido = c['client_last_name1'] ?? '';
     return empresa.isNotEmpty ? empresa : '$nombre $apellido'.trim();
   }
 
   Color _statusColor(String? status) {
     switch (status) {
-      case AppConstants.invoiceConfirmed: return AppColors.statusSuccess;
-      case AppConstants.invoiceCancelled: return AppColors.statusError;
-      default:                            return AppColors.statusWarning;
+      case AppConstants.invoiceConfirmed:
+        return AppColors.statusSuccess;
+      case AppConstants.invoiceCancelled:
+        return AppColors.statusError;
+      default:
+        return AppColors.statusWarning;
     }
   }
 
@@ -166,11 +177,15 @@ class _HomeScreenState extends State<HomeScreen> {
                 decoration: BoxDecoration(
                   color: cs.background,
                   borderRadius: const BorderRadius.vertical(
-                      top: Radius.circular(20)),
+                    top: Radius.circular(20),
+                  ),
                 ),
                 child: _isLoading
-                    ? const Center(child: CircularProgressIndicator(
-                        color: AppColors.primary))
+                    ? const Center(
+                        child: CircularProgressIndicator(
+                          color: AppColors.primary,
+                        ),
+                      )
                     : RefreshIndicator(
                         color: AppColors.primary,
                         onRefresh: _loadData,
@@ -180,6 +195,7 @@ class _HomeScreenState extends State<HomeScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              if (_isVendedor) _buildTrackingStatus(cs),
                               _sectionLabel(cs),
                               const SizedBox(height: 10),
                               _buildMenuGrid(cs),
@@ -204,10 +220,17 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildTopBar() {
     return Stack(
       children: [
-        Positioned(top: -40, right: -30,
-          child: Container(width: 120, height: 120,
+        Positioned(
+          top: -40,
+          right: -30,
+          child: Container(
+            width: 120,
+            height: 120,
             decoration: const BoxDecoration(
-                color: AppColors.primaryDark, shape: BoxShape.circle)),
+              color: AppColors.primaryDark,
+              shape: BoxShape.circle,
+            ),
+          ),
         ),
         Padding(
           padding: const EdgeInsets.fromLTRB(18, 14, 18, 12),
@@ -219,19 +242,28 @@ class _HomeScreenState extends State<HomeScreen> {
                 children: [
                   Text(
                     '¡Hola, ${_userName.split(' ').firstWhere((e) => e.isNotEmpty, orElse: () => 'usuario')}! 👋',
-                    style: const TextStyle(fontSize: 16,
-                        fontWeight: FontWeight.w500, color: Colors.white),
+                    style: const TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.w500,
+                      color: Colors.white,
+                    ),
                   ),
                   Row(
                     children: [
-                      Text(_formatRoleLabel(),
-                          style: TextStyle(fontSize: 11,
-                              color: Colors.white.withOpacity(0.65))),
+                      Text(
+                        _formatRoleLabel(),
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: Colors.white.withOpacity(0.65),
+                        ),
+                      ),
                       if (_userRole.isNotEmpty) ...[
                         const SizedBox(width: 6),
                         Container(
                           padding: const EdgeInsets.symmetric(
-                              horizontal: 8, vertical: 2),
+                            horizontal: 8,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: _isAdmin
                                 ? Colors.white.withOpacity(0.2)
@@ -254,26 +286,36 @@ class _HomeScreenState extends State<HomeScreen> {
                 ],
               ),
               PopupMenuButton<String>(
-                onSelected: (v) { if (v == 'logout') _cerrarSesion(); },
+                onSelected: (v) {
+                  if (v == 'logout') _cerrarSesion();
+                },
                 itemBuilder: (_) => [
-                  const PopupMenuItem(value: 'logout',
-                    child: Row(children: [
-                      Icon(Icons.logout, size: 18, color: AppColors.primary),
-                      SizedBox(width: 8),
-                      Text('Cerrar sesión'),
-                    ]),
+                  const PopupMenuItem(
+                    value: 'logout',
+                    child: Row(
+                      children: [
+                        Icon(Icons.logout, size: 18, color: AppColors.primary),
+                        SizedBox(width: 8),
+                        Text('Cerrar sesión'),
+                      ],
+                    ),
                   ),
                 ],
                 child: Container(
-                  width: 40, height: 40,
+                  width: 40,
+                  height: 40,
                   decoration: const BoxDecoration(
-                      color: AppColors.accent, shape: BoxShape.circle),
+                    color: AppColors.accent,
+                    shape: BoxShape.circle,
+                  ),
                   child: Center(
                     child: Text(
                       _userInitials.isEmpty ? 'MC' : _userInitials,
-                      style: const TextStyle(fontSize: 14,
-                          fontWeight: FontWeight.w600,
-                          color: AppColors.textPrimaryLight),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w600,
+                        color: AppColors.textPrimaryLight,
+                      ),
                     ),
                   ),
                 ),
@@ -288,16 +330,16 @@ class _HomeScreenState extends State<HomeScreen> {
   Widget _buildStatsGrid() {
     final stats = _isAdmin
         ? [
-            {'num': '$_pedidosHoy',           'lbl': 'Pedidos totales'},
+            {'num': '$_pedidosHoy', 'lbl': 'Pedidos totales'},
             {'num': _formatMoneda(_ventasHoy), 'lbl': 'Ventas totales'},
-            {'num': '$_clientesVisitados',     'lbl': 'Confirmados'},
-            {'num': '$_totalEmpleados',        'lbl': 'Empleados'},
+            {'num': '$_clientesVisitados', 'lbl': 'Confirmados'},
+            {'num': '$_totalEmpleados', 'lbl': 'Empleados'},
           ]
         : [
-            {'num': '$_pedidosHoy',           'lbl': 'Pedidos hoy'},
+            {'num': '$_pedidosHoy', 'lbl': 'Pedidos hoy'},
             {'num': _formatMoneda(_ventasHoy), 'lbl': 'Ventas del día'},
-            {'num': '$_clientesVisitados',     'lbl': 'Confirmados'},
-            {'num': '$_totalParadas',          'lbl': 'Paradas'},
+            {'num': '$_clientesVisitados', 'lbl': 'Confirmados'},
+            {'num': '$_totalParadas', 'lbl': 'Paradas'},
           ];
 
     return Padding(
@@ -308,7 +350,9 @@ class _HomeScreenState extends State<HomeScreen> {
         itemCount: 4,
         gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
           crossAxisCount: 2,
-          crossAxisSpacing: 10, mainAxisSpacing: 10, childAspectRatio: 2.4,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+          childAspectRatio: 2.4,
         ),
         itemBuilder: (_, i) => Container(
           decoration: BoxDecoration(
@@ -320,12 +364,21 @@ class _HomeScreenState extends State<HomeScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
-              Text(stats[i]['num']!,
-                  style: const TextStyle(fontSize: 22,
-                      fontWeight: FontWeight.w500, color: Colors.white)),
-              Text(stats[i]['lbl']!,
-                  style: TextStyle(fontSize: 10,
-                      color: Colors.white.withOpacity(0.7))),
+              Text(
+                stats[i]['num']!,
+                style: const TextStyle(
+                  fontSize: 22,
+                  fontWeight: FontWeight.w500,
+                  color: Colors.white,
+                ),
+              ),
+              Text(
+                stats[i]['lbl']!,
+                style: TextStyle(
+                  fontSize: 10,
+                  color: Colors.white.withOpacity(0.7),
+                ),
+              ),
             ],
           ),
         ),
@@ -333,30 +386,171 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
+  /// Indicador compacto del estado del rastreo de ubicación (solo rol V).
+  ///
+  /// Se actualiza con [TrackingService], que es un [ChangeNotifier].
+  Widget _buildTrackingStatus(AppColorScheme cs) {
+    return ListenableBuilder(
+      listenable: _tracking,
+      builder: (context, _) {
+        final status = _tracking.status;
+
+        var icon = Icons.location_off_outlined;
+        var color = cs.textHint;
+        var text = 'Ubicación detenida';
+        var detail = 'Inicia sesión de nuevo para compartir tu ubicación.';
+        var canOpenSettings = false;
+
+        if (status == TrackingStatus.activo) {
+          icon = Icons.location_on_outlined;
+          color = AppColors.statusSuccess;
+          text = 'Compartiendo ubicación';
+          detail =
+              'Notificación activa. Si no la ves, actívala en Ajustes > Notificaciones.';
+        } else if (status == TrackingStatus.sinPermiso) {
+          icon = Icons.location_off_outlined;
+          color = AppColors.statusError;
+          text = 'Sin permiso de ubicación (toca para abrir Ajustes)';
+          detail =
+              'Si no ves la notificación, actívala en Ajustes > Notificaciones.';
+          canOpenSettings = true;
+        } else if (status == TrackingStatus.errorRed) {
+          icon = Icons.wifi_off_outlined;
+          color = AppColors.statusWarning;
+          text = 'Error de red, reintentando';
+          detail =
+              _tracking.lastError ?? 'Se reintentará con la próxima posición.';
+        }
+
+        return GestureDetector(
+          behavior: HitTestBehavior.opaque,
+          onTap: canOpenSettings
+              ? () => unawaited(Geolocator.openAppSettings())
+              : null,
+          child: Container(
+            margin: const EdgeInsets.only(bottom: 16),
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+            decoration: BoxDecoration(
+              color: cs.surface,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: cs.border),
+            ),
+            child: Row(
+              children: [
+                Icon(icon, color: color, size: 22),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        text,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w500,
+                          color: cs.textPrimary,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        detail,
+                        style: TextStyle(fontSize: 10, color: cs.textHint),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _sectionLabel(AppColorScheme cs) =>
       _sectionLabelText('Acciones rápidas', cs);
 
-  Widget _sectionLabelText(String label, AppColorScheme cs) =>
-      Text(label.toUpperCase(),
-          style: TextStyle(fontSize: 10, fontWeight: FontWeight.w600,
-              color: cs.textSec, letterSpacing: 1.2));
+  Widget _sectionLabelText(String label, AppColorScheme cs) => Text(
+    label.toUpperCase(),
+    style: TextStyle(
+      fontSize: 10,
+      fontWeight: FontWeight.w600,
+      color: cs.textSec,
+      letterSpacing: 1.2,
+    ),
+  );
 
   Widget _buildMenuGrid(AppColorScheme cs) {
     final adminItems = [
-      {'icon': Icons.receipt_long_outlined, 'title': 'Pedidos',      'desc': 'Ver facturas',          'route': AppRoutes.orders},
-      {'icon': Icons.people_outline,        'title': 'Clientes',     'desc': 'Directorio',            'route': AppRoutes.customers},
-      {'icon': Icons.badge_outlined,        'title': 'Empleados',    'desc': 'Gestión de personal',   'route': AppRoutes.employees},
-      {'icon': Icons.inventory_2_outlined,  'title': 'Productos',    'desc': 'Inventario',            'route': AppRoutes.products},
-      {'icon': Icons.map_outlined,          'title': 'Mapa en vivo', 'desc': 'Domiciliarios activos', 'route': AppRoutes.deliveryMap},
-      {'icon': Icons.alt_route_outlined,    'title': 'Rutas',        'desc': 'Distribuir clientes',   'route': AppRoutes.routeAdmin},
-      {'icon': Icons.smart_toy_outlined,    'title': 'Asistente',    'desc': 'Chatbot IA',            'route': AppRoutes.chatbot},
+      {
+        'icon': Icons.receipt_long_outlined,
+        'title': 'Pedidos',
+        'desc': 'Ver facturas',
+        'route': AppRoutes.orders,
+      },
+      {
+        'icon': Icons.people_outline,
+        'title': 'Clientes',
+        'desc': 'Directorio',
+        'route': AppRoutes.customers,
+      },
+      {
+        'icon': Icons.badge_outlined,
+        'title': 'Empleados',
+        'desc': 'Gestión de personal',
+        'route': AppRoutes.employees,
+      },
+      {
+        'icon': Icons.inventory_2_outlined,
+        'title': 'Productos',
+        'desc': 'Inventario',
+        'route': AppRoutes.products,
+      },
+      {
+        'icon': Icons.map_outlined,
+        'title': 'Mapa en vivo',
+        'desc': 'Domiciliarios activos',
+        'route': AppRoutes.deliveryMap,
+      },
+      {
+        'icon': Icons.alt_route_outlined,
+        'title': 'Rutas',
+        'desc': 'Distribuir clientes',
+        'route': AppRoutes.routeAdmin,
+      },
+      {
+        'icon': Icons.smart_toy_outlined,
+        'title': 'Asistente',
+        'desc': 'Chatbot IA',
+        'route': AppRoutes.chatbot,
+      },
     ];
 
     final vendedorItems = [
-      {'icon': Icons.receipt_long_outlined, 'title': 'Nuevo pedido', 'desc': 'Registrar venta', 'route': AppRoutes.newOrder},
-      {'icon': Icons.map_outlined,          'title': 'Mi ruta',      'desc': 'Ver en mapa',     'route': AppRoutes.route},
-      {'icon': Icons.people_outline,        'title': 'Clientes',     'desc': 'Directorio',      'route': AppRoutes.customers},
-      {'icon': Icons.smart_toy_outlined,    'title': 'Asistente',    'desc': 'Chatbot IA',      'route': AppRoutes.chatbot},
+      {
+        'icon': Icons.receipt_long_outlined,
+        'title': 'Nuevo pedido',
+        'desc': 'Registrar venta',
+        'route': AppRoutes.newOrder,
+      },
+      {
+        'icon': Icons.map_outlined,
+        'title': 'Mi ruta',
+        'desc': 'Ver en mapa',
+        'route': AppRoutes.route,
+      },
+      {
+        'icon': Icons.people_outline,
+        'title': 'Clientes',
+        'desc': 'Directorio',
+        'route': AppRoutes.customers,
+      },
+      {
+        'icon': Icons.smart_toy_outlined,
+        'title': 'Asistente',
+        'desc': 'Chatbot IA',
+        'route': AppRoutes.chatbot,
+      },
     ];
 
     final items = _isAdmin ? adminItems : vendedorItems;
@@ -367,7 +561,9 @@ class _HomeScreenState extends State<HomeScreen> {
       itemCount: items.length,
       gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: 2,
-        crossAxisSpacing: 10, mainAxisSpacing: 10, childAspectRatio: 1.6,
+        crossAxisSpacing: 10,
+        mainAxisSpacing: 10,
+        childAspectRatio: 1.6,
       ),
       itemBuilder: (_, i) => GestureDetector(
         onTap: () => Navigator.pushNamed(context, items[i]['route'] as String),
@@ -381,15 +577,24 @@ class _HomeScreenState extends State<HomeScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Icon(items[i]['icon'] as IconData,
-                  color: AppColors.primary, size: 26),
+              Icon(
+                items[i]['icon'] as IconData,
+                color: AppColors.primary,
+                size: 26,
+              ),
               const SizedBox(height: 8),
-              Text(items[i]['title'] as String,
-                  style: TextStyle(fontSize: 13,
-                      fontWeight: FontWeight.w500,
-                      color: cs.textPrimary)),
-              Text(items[i]['desc'] as String,
-                  style: TextStyle(fontSize: 10, color: cs.textHint)),
+              Text(
+                items[i]['title'] as String,
+                style: TextStyle(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w500,
+                  color: cs.textPrimary,
+                ),
+              ),
+              Text(
+                items[i]['desc'] as String,
+                style: TextStyle(fontSize: 10, color: cs.textHint),
+              ),
             ],
           ),
         ),
@@ -402,13 +607,15 @@ class _HomeScreenState extends State<HomeScreen> {
       return Container(
         padding: const EdgeInsets.symmetric(vertical: 24),
         alignment: Alignment.center,
-        child: Text('No hay pedidos registrados hoy',
-            style: TextStyle(fontSize: 13, color: cs.textHint)),
+        child: Text(
+          'No hay pedidos registrados hoy',
+          style: TextStyle(fontSize: 13, color: cs.textHint),
+        ),
       );
     }
     return Column(
       children: _ultimosPedidos.map((inv) {
-        final total  = (inv['total'] ?? 0).toDouble();
+        final total = (inv['total'] ?? 0).toDouble();
         final status = inv['status'] ?? '';
         return Container(
           margin: const EdgeInsets.only(bottom: 8),
@@ -420,27 +627,42 @@ class _HomeScreenState extends State<HomeScreen> {
           ),
           child: Row(
             children: [
-              Container(width: 9, height: 9,
-                  decoration: BoxDecoration(
-                      color: _statusColor(status), shape: BoxShape.circle)),
+              Container(
+                width: 9,
+                height: 9,
+                decoration: BoxDecoration(
+                  color: _statusColor(status),
+                  shape: BoxShape.circle,
+                ),
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(_clientName(inv),
-                        style: TextStyle(fontSize: 12,
-                            fontWeight: FontWeight.w500,
-                            color: cs.textPrimary)),
-                    Text(_formatTiempo(inv['date']?.toString()),
-                        style: TextStyle(fontSize: 10, color: cs.textHint)),
+                    Text(
+                      _clientName(inv),
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w500,
+                        color: cs.textPrimary,
+                      ),
+                    ),
+                    Text(
+                      _formatTiempo(inv['date']?.toString()),
+                      style: TextStyle(fontSize: 10, color: cs.textHint),
+                    ),
                   ],
                 ),
               ),
-              Text(_formatMoneda(total),
-                  style: const TextStyle(fontSize: 12,
-                      fontWeight: FontWeight.w500,
-                      color: AppColors.primary)),
+              Text(
+                _formatMoneda(total),
+                style: const TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.primary,
+                ),
+              ),
             ],
           ),
         );
@@ -450,19 +672,69 @@ class _HomeScreenState extends State<HomeScreen> {
 
   Widget _buildBottomNav(AppColorScheme cs) {
     final adminNav = [
-      {'icon': Icons.home_outlined,              'active': Icons.home,              'label': 'Inicio',    'route': AppRoutes.home},
-      {'icon': Icons.receipt_long_outlined,      'active': Icons.receipt_long,      'label': 'Pedidos',   'route': AppRoutes.orders},
-      {'icon': Icons.people_outline,             'active': Icons.people,            'label': 'Clientes',  'route': AppRoutes.customers},
-      {'icon': Icons.badge_outlined,             'active': Icons.badge,             'label': 'Empleados', 'route': AppRoutes.employees},
-      {'icon': Icons.accessibility_new_outlined, 'active': Icons.accessibility_new, 'label': 'Acceso',   'route': AppRoutes.accessibility},
+      {
+        'icon': Icons.home_outlined,
+        'active': Icons.home,
+        'label': 'Inicio',
+        'route': AppRoutes.home,
+      },
+      {
+        'icon': Icons.receipt_long_outlined,
+        'active': Icons.receipt_long,
+        'label': 'Pedidos',
+        'route': AppRoutes.orders,
+      },
+      {
+        'icon': Icons.people_outline,
+        'active': Icons.people,
+        'label': 'Clientes',
+        'route': AppRoutes.customers,
+      },
+      {
+        'icon': Icons.badge_outlined,
+        'active': Icons.badge,
+        'label': 'Empleados',
+        'route': AppRoutes.employees,
+      },
+      {
+        'icon': Icons.accessibility_new_outlined,
+        'active': Icons.accessibility_new,
+        'label': 'Acceso',
+        'route': AppRoutes.accessibility,
+      },
     ];
 
     final vendedorNav = [
-      {'icon': Icons.home_outlined,              'active': Icons.home,              'label': 'Inicio',  'route': AppRoutes.home},
-      {'icon': Icons.receipt_long_outlined,      'active': Icons.receipt_long,      'label': 'Pedidos', 'route': AppRoutes.orders},
-      {'icon': Icons.map_outlined,               'active': Icons.map,               'label': 'Ruta',    'route': AppRoutes.route},
-      {'icon': Icons.people_outline,             'active': Icons.people,            'label': 'Clientes','route': AppRoutes.customers},
-      {'icon': Icons.accessibility_new_outlined, 'active': Icons.accessibility_new, 'label': 'Acceso', 'route': AppRoutes.accessibility},
+      {
+        'icon': Icons.home_outlined,
+        'active': Icons.home,
+        'label': 'Inicio',
+        'route': AppRoutes.home,
+      },
+      {
+        'icon': Icons.receipt_long_outlined,
+        'active': Icons.receipt_long,
+        'label': 'Pedidos',
+        'route': AppRoutes.orders,
+      },
+      {
+        'icon': Icons.map_outlined,
+        'active': Icons.map,
+        'label': 'Ruta',
+        'route': AppRoutes.route,
+      },
+      {
+        'icon': Icons.people_outline,
+        'active': Icons.people,
+        'label': 'Clientes',
+        'route': AppRoutes.customers,
+      },
+      {
+        'icon': Icons.accessibility_new_outlined,
+        'active': Icons.accessibility_new,
+        'label': 'Acceso',
+        'route': AppRoutes.accessibility,
+      },
     ];
 
     final navItems = _isAdmin ? adminNav : vendedorNav;
@@ -489,20 +761,23 @@ class _HomeScreenState extends State<HomeScreen> {
                 Icon(
                   isActive
                       ? navItems[i]['active'] as IconData
-                      : navItems[i]['icon']   as IconData,
+                      : navItems[i]['icon'] as IconData,
                   color: isActive
                       ? AppColors.navIconActive
                       : AppColors.navIconInactive,
                   size: 22,
                 ),
                 const SizedBox(height: 2),
-                Text(navItems[i]['label'] as String,
-                    style: TextStyle(
-                        fontSize: 9,
-                        fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
-                        color: isActive
-                            ? AppColors.navIconActive
-                            : AppColors.navIconInactive)),
+                Text(
+                  navItems[i]['label'] as String,
+                  style: TextStyle(
+                    fontSize: 9,
+                    fontWeight: isActive ? FontWeight.w600 : FontWeight.normal,
+                    color: isActive
+                        ? AppColors.navIconActive
+                        : AppColors.navIconInactive,
+                  ),
+                ),
               ],
             ),
           );
