@@ -1,0 +1,6 @@
+$env:JAVA_HOME = "C:\Program Files\Eclipse Adoptium\jdk-17.0.20.101-hotspot"
+$env:PATH = "$env:JAVA_HOME\bin;$env:PATH"
+flutter run -d emulator-5554
+
+
+php artisan serve --host=0.0.0.0 --port=8000
