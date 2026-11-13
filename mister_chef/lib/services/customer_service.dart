@@ -41,6 +41,16 @@ class CustomerService {
     return List<Map<String, dynamic>>.from(res);
   }
 
+  /// Obtiene los clientes con coordenadas para el mapa del administrador.
+  ///
+  /// El endpoint devuelve un array plano con: `id_client`, `business_name`,
+  /// `address`, `phone_number`, `latitude`, `longitude`, `document_employee`
+  /// y `seller_name`. Las coordenadas pueden venir como número o como string.
+  Future<List<Map<String, dynamic>>> getClientsMap() async {
+    final res = await _api.get(AppConstants.endpointClientsMap);
+    return List<Map<String, dynamic>>.from(res);
+  }
+
   /// Obtiene el detalle completo de un cliente por su [id].
   ///
   /// Incluye datos de ciudad, departamento, vendedor asignado

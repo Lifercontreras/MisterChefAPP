@@ -44,6 +44,9 @@ class AppConstants {
   /// GET / POST — Listar o crear clientes.
   static const String endpointClients = '/clients';
 
+  /// GET — Clientes con coordenadas para el mapa del administrador.
+  static const String endpointClientsMap = '/clients/map';
+
   // ── ENDPOINTS DE EMPLEADOS
   /// GET / POST — Listar o crear empleados.
   static const String endpointEmployees = '/employees';
