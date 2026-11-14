@@ -222,7 +222,7 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
 
                       return GestureDetector(
                         onTap: () async {
-                          final result = await Navigator.push(
+                          await Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (_) => EmployeeDetailScreen(
@@ -231,7 +231,10 @@ class _EmployeesScreenState extends State<EmployeesScreen> {
                               ),
                             ),
                           );
-                          if (result == true) _loadEmployees();
+                          if (!mounted) return;
+                          // El detalle puede cambiar el estado del empleado:
+                          // la lista se refresca siempre al volver.
+                          _loadEmployees();
                         },
                         child: Container(
                           padding: const EdgeInsets.all(12),

@@ -34,7 +34,7 @@ class LocationService {
 
   /// Envía la ubicación GPS actual del vendedor al servidor.
   ///
-  /// Llamado periódicamente (cada [AppConstants.locationIntervalSeconds])
+  /// Llamado periódicamente (cada [AppConstants.locationUpdateInterval])
   /// mientras el vendedor tiene la app abierta, para que el administrador
   /// pueda ver su posición en el mapa de entrega en tiempo real.
   Future<void> sendLocation({

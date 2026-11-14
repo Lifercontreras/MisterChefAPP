@@ -176,7 +176,7 @@ class _ChatbotScreenState extends State<ChatbotScreen> {
               const Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Asistente Mister Chef',
+                  Text('Asistente LogiGo',
                       style: TextStyle(fontSize: 15,
                           fontWeight: FontWeight.w500, color: Colors.white)),
                   Text('Siempre disponible para ayudarte',

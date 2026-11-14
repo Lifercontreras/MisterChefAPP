@@ -62,14 +62,6 @@ class AppConstants {
   /// POST   — Desactivar el rastreo de ubicación del vendedor.
   static const String endpointLocationDeactivate = '/location/deactivate';
 
-  /// Clave de la API de Google Directions para calcular rutas en carretera.
-  ///
-  /// Se inyecta en tiempo de compilación con
-  /// `--dart-define=DIRECTIONS_API_KEY=...` o `--dart-define-from-file`.
-  static const String directionsApiKey = String.fromEnvironment(
-    'DIRECTIONS_API_KEY',
-  );
-
   /// Versión mostrada en el splash. Mantener sincronizada con pubspec.yaml.
   static const String appVersion = '0.1.0';
 
@@ -77,11 +69,15 @@ class AppConstants {
   /// GET / POST — Obtener paradas asignadas o crear una ruta.
   static const String endpointRoutes = '/routes';
 
-  /// POST       — Distribuir automáticamente las rutas entre vendedores.
-  static const String endpointRouteDistribute = '/routes/distribute';
+  /// POST       — Calcular la vista previa de la redistribución total.
+  ///
+  /// No escribe datos: devuelve el reparto propuesto y su `fingerprint`.
+  static const String endpointRouteDistributionPreview =
+      '/routes/distribution/preview';
 
-  /// GET        — Obtener sugerencias de cambio de ruta pendientes.
-  static const String endpointRouteSuggestions = '/route-suggestions';
+  /// POST       — Aplicar la redistribución usando el `fingerprint` previo.
+  static const String endpointRouteDistributionApply =
+      '/routes/distribution/apply';
 
   // ── ENDPOINT DE CHATBOT IA
   /// POST — Enviar un mensaje al asistente virtual del servidor.
@@ -134,8 +130,15 @@ class AppConstants {
   static const String suggestionRejected = 'R';
 
   // ── CONFIGURACIÓN DE RASTREO GPS
-  /// Intervalo en segundos entre envíos automáticos de ubicación al servidor.
-  static const int locationIntervalSeconds = 30;
+  /// Intervalo único de actualización de ubicación: emisión del stream GPS,
+  /// mínimo entre envíos y refresco automático del mapa del administrador.
+  static const Duration locationUpdateInterval = Duration(seconds: 10);
+
+  /// Tiempo mínimo entre dos envíos exitosos de ubicación.
+  ///
+  /// Es menor que [locationUpdateInterval] para que el jitter del GPS no
+  /// descarte posiciones por pequeñas diferencias de reloj.
+  static const Duration locationMinSendInterval = Duration(seconds: 8);
 
   // ── TIEMPOS DE ESPERA HTTP
   /// Tiempo máximo para establecer conexión con la API antes de lanzar error.

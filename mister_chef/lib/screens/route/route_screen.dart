@@ -4,6 +4,8 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:geolocator/geolocator.dart';
 import '../../config/app_colors.dart';
 import '../../config/app_routes.dart';
+import '../../config/road_route_logic.dart';
+import '../../config/route_clients_logic.dart';
 import '../../services/route_service.dart';
 import '../../services/api_service.dart';
 import '../../utils/location_helper.dart';
@@ -30,6 +32,16 @@ class _RouteScreenState extends State<RouteScreen> {
   bool _hasGpsFix = false;
   final List<LatLng> _trackedPath = [];
   StreamSubscription<Position>? _positionStream;
+
+  // Ruta general por vías (OSRM). El contador de versión descarta respuestas
+  // que llegan después de que la lista de clientes ya cambió.
+  int _roadRouteVersion = 0;
+  bool _roadRouteRequestInFlight = false;
+  String? _roadRouteSuccessSignature;
+  DateTime? _roadRouteLastRequestAt;
+  List<LatLng>? _roadRoutePoints;
+  List<LatLng>? _latestRoadPoints;
+  bool _hasRoadRoute = false;
 
   static const double _panelMin = 0.18;
   static const double _panelInitial = 0.42;
@@ -95,15 +107,14 @@ class _RouteScreenState extends State<RouteScreen> {
     setState(() => _isLoading = true);
     try {
       final data = await _routeService.getRoutes();
-      // ── LOGS TEMPORALES ──────────────────────────────
-      print('Rutas recibidas: ${data.length}');
-      print('Total clients: ${data.first['total_clients']}');
-      print('Clients array length: ${(data.first['clients'] as List).length}');
-      //
+
       List<Map<String, dynamic>> clients = [];
       if (data.isNotEmpty) {
         final myRoute = data.first;
-        clients = List<Map<String, dynamic>>.from(myRoute['clients'] ?? []);
+        final routeClients = List<Map<String, dynamic>>.from(
+          myRoute['clients'] ?? [],
+        );
+        clients = activeRouteClients(routeClients);
       }
       if (mounted) {
         setState(() {
@@ -120,6 +131,8 @@ class _RouteScreenState extends State<RouteScreen> {
   void _buildMarkers() {
     _markers.clear();
     _polylines.clear();
+    // Invalida las respuestas en vuelo de una lista de clientes anterior.
+    _roadRouteVersion++;
     final List<LatLng> points = [];
 
     for (int i = 0; i < _clients.length; i++) {
@@ -152,6 +165,7 @@ class _RouteScreenState extends State<RouteScreen> {
     }
 
     if (points.length > 1) {
+      // Respaldo inmediato: línea recta entre los clientes en su orden.
       _polylines.add(
         Polyline(
           polylineId: const PolylineId('mi_ruta'),
@@ -160,10 +174,128 @@ class _RouteScreenState extends State<RouteScreen> {
           width: 3,
         ),
       );
+
+      // Si estos mismos puntos ya se calcularon por vías, reutiliza el trazo
+      // en lugar de pedirlo otra vez.
+      final cached = _roadRoutePoints;
+      if (cached != null &&
+          _roadRouteSuccessSignature == _routeSignature(points)) {
+        _polylines.removeWhere((p) => p.polylineId.value == 'mi_ruta');
+        _polylines.add(
+          Polyline(
+            polylineId: const PolylineId('mi_ruta'),
+            points: cached,
+            color: AppColors.mapRoute,
+            width: 3,
+          ),
+        );
+        _hasRoadRoute = true;
+      } else {
+        _hasRoadRoute = false;
+      }
+    } else {
+      _hasRoadRoute = false;
     }
 
     setState(() {});
+    unawaited(_cargarRutaPorVias(points));
   }
+
+  /// Reemplaza el trazo recto de 'mi_ruta' por la ruta real en carretera.
+  ///
+  /// Silencioso por diseño: si OSRM falla o no está disponible se conserva
+  /// la línea recta como respaldo y solo se registra en `debugPrint`.
+  Future<void> _cargarRutaPorVias(List<LatLng> points) async {
+    final signature = _routeSignature(points);
+    _latestRoadPoints = points;
+    final now = DateTime.now();
+
+    final shouldRequest = shouldRequestRoadRoute(
+      pointCount: points.length,
+      signature: signature,
+      lastSuccessSignature: _roadRouteSuccessSignature,
+      lastRequestAt: _roadRouteLastRequestAt,
+      now: now,
+    );
+
+    // Sin puntos suficientes, ruta ya resuelta o demasiado pronto tras la
+    // última petición: se conserva la línea recta como respaldo.
+    if (!shouldRequest) return;
+
+    // Una sola petición en vuelo: al terminar se reintenta si los puntos
+    // cambiaron mientras tanto.
+    if (_roadRouteRequestInFlight) return;
+
+    // Se registra el instante de la petición (no el de éxito) para respetar
+    // el intervalo mínimo entre llamadas al servidor público.
+    _roadRouteLastRequestAt = now;
+    _roadRouteRequestInFlight = true;
+    final version = _roadRouteVersion;
+
+    try {
+      final road = await _routeService.getRoadRoute(
+        points.map((p) => {'lat': p.latitude, 'lng': p.longitude}).toList(),
+      );
+
+      if (!mounted) return;
+
+      // Descarta respuestas viejas, salvo que los puntos sigan siendo los
+      // mismos (por ejemplo tras un refresco sin cambios).
+      final latestSignature = _latestRoadPoints == null
+          ? null
+          : _routeSignature(_latestRoadPoints!);
+      if (version != _roadRouteVersion && latestSignature != signature) {
+        return;
+      }
+      if (road.length < 2) return;
+
+      final roadPoints = road
+          .map((p) => LatLng(p['lat']!, p['lng']!))
+          .toList(growable: false);
+
+      // La firma de éxito solo se guarda con una ruta válida: un fallo no
+      // impide reintentar con los mismos puntos en el siguiente refresco.
+      _roadRouteSuccessSignature = signature;
+      _roadRoutePoints = roadPoints;
+
+      setState(() {
+        // Nunca se pisa una ruta de navegación ya trazada.
+        if (_polylines.any((p) => p.polylineId.value == 'ruta_navegacion')) {
+          return;
+        }
+        _hasRoadRoute = true;
+        _polylines.removeWhere((p) => p.polylineId.value == 'mi_ruta');
+        _polylines.add(
+          Polyline(
+            polylineId: const PolylineId('mi_ruta'),
+            points: roadPoints,
+            color: AppColors.mapRoute,
+            width: 3,
+          ),
+        );
+      });
+    } on ApiException catch (e) {
+      debugPrint('Ruta por vías no disponible: ${e.message}');
+    } catch (e) {
+      debugPrint('Ruta por vías no disponible: $e');
+    } finally {
+      _roadRouteRequestInFlight = false;
+      // Solo se encadena una petición si los puntos cambiaron mientras
+      // estaba en vuelo; la función pura aplica el intervalo mínimo.
+      final latest = _latestRoadPoints;
+      if (mounted && latest != null && _routeSignature(latest) != signature) {
+        unawaited(_cargarRutaPorVias(latest));
+      }
+    }
+  }
+
+  /// Firma estable de una lista de puntos para no repetir peticiones.
+  String _routeSignature(List<LatLng> points) => points
+      .map(
+        (p) =>
+            '${p.latitude.toStringAsFixed(5)},${p.longitude.toStringAsFixed(5)}',
+      )
+      .join('|');
 
   void _focusClient(Map<String, dynamic> c) {
     final lat = double.tryParse(c['latitude']?.toString() ?? '');
@@ -214,6 +346,7 @@ class _RouteScreenState extends State<RouteScreen> {
       setState(() {
         _polylines.removeWhere((p) => p.polylineId.value == 'ruta_navegacion');
         _polylines.removeWhere((p) => p.polylineId.value == 'mi_ruta');
+        _hasRoadRoute = false;
         _polylines.add(
           Polyline(
             polylineId: const PolylineId('ruta_navegacion'),
@@ -244,8 +377,6 @@ class _RouteScreenState extends State<RouteScreen> {
       );
 
       _showMsg('Ruta trazada — ${_clientName(c)}');
-    } on DirectionsApiKeyMissingException catch (e) {
-      _showMsg(e.toString(), isError: true);
     } on ApiException catch (e) {
       _showMsg(e.message, isError: true);
     } catch (_) {
@@ -427,6 +558,30 @@ class _RouteScreenState extends State<RouteScreen> {
                     mapToolbarEnabled: false,
                   ),
                 ),
+
+                // ── Atribución exigida por OSRM/OpenStreetMap
+                if (_hasRoadRoute)
+                  Positioned(
+                    left: 10,
+                    top: 8,
+                    child: IgnorePointer(
+                      child: Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 8,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: cs.card.withValues(alpha: 0.85),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(color: cs.border),
+                        ),
+                        child: Text(
+                          'Rutas © OpenStreetMap · OSRM',
+                          style: TextStyle(fontSize: 10, color: cs.textHint),
+                        ),
+                      ),
+                    ),
+                  ),
 
                 // ── Panel deslizable
                 DraggableScrollableSheet(

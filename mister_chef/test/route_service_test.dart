@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -6,142 +7,140 @@ import 'package:http/testing.dart';
 import 'package:mister_chef/services/api_service.dart';
 import 'package:mister_chef/services/route_service.dart';
 
-/// Key ficticia para las pruebas; nunca es una key real.
-const String _testApiKey = 'clave-de-prueba';
-
-/// Polilínea de ejemplo de la documentación de Google.
+/// Polilínea de ejemplo del formato Encoded Polyline (precisión 5).
 ///
 /// Decodifica a (38.5, -120.2), (40.7, -120.95) y (43.252, -126.453).
 const String _encodedPolyline = r'_p~iF~ps|U_ulLnnqC_mqNvxq`@';
 
+/// Respuesta válida de OSRM.
+http.Response _okResponse([String geometry = _encodedPolyline]) {
+  return http.Response(
+    jsonEncode({
+      'code': 'Ok',
+      'routes': [
+        {'geometry': geometry, 'distance': 1200.0, 'duration': 300.0},
+      ],
+    }),
+    200,
+    headers: {'content-type': 'application/json'},
+  );
+}
+
 void main() {
-  group('RouteService.getDirections', () {
-    test(
-      '200 válido envía los headers correctos y decodifica la polilínea',
-      () async {
-        http.Request? captured;
+  group('RouteService.getRoadRoute', () {
+    test('respuesta Ok decodifica la polilínea en puntos lat/lng', () async {
+      final requests = <http.Request>[];
+      final client = MockClient((request) async {
+        requests.add(request);
+        return _okResponse();
+      });
 
-        final client = MockClient((request) async {
-          captured = request;
-          return http.Response(
-            jsonEncode({
-              'routes': [
-                {
-                  'polyline': {'encodedPolyline': _encodedPolyline},
-                  'distanceMeters': 1200,
-                  'duration': '300s',
-                },
-              ],
-            }),
-            200,
-            headers: {'content-type': 'application/json'},
-          );
-        });
+      final service = RouteService(client: client);
+      final points = await service.getRoadRoute([
+        {'lat': 38.5, 'lng': -120.2},
+        {'lat': 43.252, 'lng': -126.453},
+      ]);
 
-        final service = RouteService(client: client, apiKey: _testApiKey);
-        final points = await service.getDirections(
-          originLat: 38.5,
-          originLng: -120.2,
-          destLat: 43.252,
-          destLng: -126.453,
-        );
+      expect(requests, hasLength(1));
+      expect(points, hasLength(3));
+      expect(points[0]['lat'], closeTo(38.5, 1e-6));
+      expect(points[0]['lng'], closeTo(-120.2, 1e-6));
+      expect(points[1]['lat'], closeTo(40.7, 1e-6));
+      expect(points[1]['lng'], closeTo(-120.95, 1e-6));
+      expect(points[2]['lat'], closeTo(43.252, 1e-6));
+      expect(points[2]['lng'], closeTo(-126.453, 1e-6));
+    });
 
-        expect(captured, isNotNull);
-        expect(captured!.method, 'POST');
-        expect(
-          captured!.url.toString(),
-          'https://routes.googleapis.com/directions/v2:computeRoutes',
-        );
-        expect(captured!.headers['Content-Type'], 'application/json');
-        expect(captured!.headers['X-Goog-Api-Key'], _testApiKey);
-        expect(
-          captured!.headers['X-Goog-FieldMask'],
-          'routes.polyline.encodedPolyline,'
-          'routes.distanceMeters,'
-          'routes.duration',
-        );
+    test('la URL pone longitud antes que latitud y pide la geometría '
+        'completa en polyline', () async {
+      http.Request? captured;
+      final client = MockClient((request) async {
+        captured = request;
+        return _okResponse();
+      });
 
-        final body = jsonDecode(captured!.body) as Map<String, dynamic>;
-        expect(body['travelMode'], 'DRIVE');
-        expect(body['routingPreference'], 'TRAFFIC_UNAWARE');
-        expect(body['polylineEncoding'], 'ENCODED_POLYLINE');
-        expect(body['origin']['location']['latLng']['latitude'], 38.5);
-        expect(body['origin']['location']['latLng']['longitude'], -120.2);
-        expect(body['destination']['location']['latLng']['latitude'], 43.252);
-        expect(
-          body['destination']['location']['latLng']['longitude'],
-          -126.453,
-        );
+      final service = RouteService(client: client);
+      await service.getRoadRoute([
+        {'lat': 38.5, 'lng': -120.2},
+        {'lat': 43.252, 'lng': -126.453},
+      ]);
 
-        expect(points, hasLength(3));
-        expect(points[0]['lat'], closeTo(38.5, 1e-6));
-        expect(points[0]['lng'], closeTo(-120.2, 1e-6));
-        expect(points[1]['lat'], closeTo(40.7, 1e-6));
-        expect(points[1]['lng'], closeTo(-120.95, 1e-6));
-        expect(points[2]['lat'], closeTo(43.252, 1e-6));
-        expect(points[2]['lng'], closeTo(-126.453, 1e-6));
-      },
-    );
-
-    test('403 con error.message lo muestra al usuario', () async {
-      final client = MockClient(
-        (_) async => http.Response(
-          jsonEncode({
-            'error': {
-              'code': 403,
-              'message': 'Routes API has not been used in project before.',
-              'status': 'PERMISSION_DENIED',
-            },
-          }),
-          403,
-          headers: {'content-type': 'application/json'},
-        ),
+      expect(captured, isNotNull);
+      expect(captured!.method, 'GET');
+      expect(captured!.url.host, 'router.project-osrm.org');
+      expect(
+        captured!.url.path,
+        '/route/v1/driving/-120.200000,38.500000;-126.453000,43.252000',
       );
+      expect(captured!.url.queryParameters['overview'], 'full');
+      expect(captured!.url.queryParameters['geometries'], 'polyline');
+    });
 
-      final service = RouteService(client: client, apiKey: _testApiKey);
+    test('envía el User-Agent que identifica a la app', () async {
+      http.Request? captured;
+      final client = MockClient((request) async {
+        captured = request;
+        return _okResponse();
+      });
 
-      await expectLater(
-        service.getDirections(
-          originLat: 38.5,
-          originLng: -120.2,
-          destLat: 43.252,
-          destLng: -126.453,
-        ),
-        throwsA(
-          isA<ApiException>()
-              .having((e) => e.statusCode, 'statusCode', 403)
-              .having(
-                (e) => e.message,
-                'message',
-                contains('Routes API has not been used in project before.'),
-              )
-              .having(
-                (e) => e.message,
-                'message',
-                contains('PERMISSION_DENIED'),
-              ),
-        ),
+      final service = RouteService(client: client);
+      await service.getRoadRoute([
+        {'lat': 38.5, 'lng': -120.2},
+        {'lat': 43.252, 'lng': -126.453},
+      ]);
+
+      expect(captured, isNotNull);
+      expect(
+        captured!.headers['User-Agent'],
+        'LogiGo-MisterChef/0.1 (proyecto academico)',
+      );
+      expect(captured!.headers['Accept'], 'application/json');
+    });
+
+    test('con 3 puntos los envía todos en orden en la URL', () async {
+      http.Request? captured;
+      final client = MockClient((request) async {
+        captured = request;
+        return _okResponse();
+      });
+
+      final service = RouteService(client: client);
+      await service.getRoadRoute([
+        {'lat': 38.5, 'lng': -120.2},
+        {'lat': 40.7, 'lng': -120.95},
+        {'lat': 43.252, 'lng': -126.453},
+      ]);
+
+      expect(captured, isNotNull);
+      expect(
+        captured!.url.path,
+        '/route/v1/driving/'
+        '-120.200000,38.500000;'
+        '-120.950000,40.700000;'
+        '-126.453000,43.252000',
       );
     });
 
-    test('200 con routes vacío indica que no se encontró ruta', () async {
+    test('"NoRoute" indica que no se encontró ruta', () async {
       final client = MockClient(
         (_) async => http.Response(
-          jsonEncode({'routes': <dynamic>[]}),
+          jsonEncode({
+            'code': 'NoRoute',
+            'message': 'Impossible route between points',
+            'routes': <dynamic>[],
+          }),
           200,
           headers: {'content-type': 'application/json'},
         ),
       );
 
-      final service = RouteService(client: client, apiKey: _testApiKey);
+      final service = RouteService(client: client);
 
       await expectLater(
-        service.getDirections(
-          originLat: 38.5,
-          originLng: -120.2,
-          destLat: 43.252,
-          destLng: -126.453,
-        ),
+        service.getRoadRoute([
+          {'lat': 38.5, 'lng': -120.2},
+          {'lat': 43.252, 'lng': -126.453},
+        ]),
         throwsA(
           isA<ApiException>().having(
             (e) => e.message,
@@ -152,29 +151,130 @@ void main() {
       );
     });
 
-    test(
-      'key vacía lanza DirectionsApiKeyMissingException sin llamar a la red',
-      () async {
-        var called = false;
+    test('HTTP 429 avisa de demasiadas solicitudes', () async {
+      final client = MockClient(
+        (_) async => http.Response(
+          jsonEncode({'code': 'TooManyRequests'}),
+          429,
+          headers: {'content-type': 'application/json'},
+        ),
+      );
 
-        final client = MockClient((_) async {
-          called = true;
-          return http.Response('{}', 200);
-        });
+      final service = RouteService(client: client);
 
-        final service = RouteService(client: client, apiKey: '');
+      await expectLater(
+        service.getRoadRoute([
+          {'lat': 38.5, 'lng': -120.2},
+          {'lat': 43.252, 'lng': -126.453},
+        ]),
+        throwsA(
+          isA<ApiException>()
+              .having(
+                (e) => e.message,
+                'message',
+                'Demasiadas solicitudes de ruta. '
+                    'Intenta de nuevo en unos segundos.',
+              )
+              .having((e) => e.statusCode, 'statusCode', 429),
+        ),
+      );
+    });
 
-        await expectLater(
-          service.getDirections(
-            originLat: 38.5,
-            originLng: -120.2,
-            destLat: 43.252,
-            destLng: -126.453,
+    test('HTTP 500 con cuerpo HTML informa el código', () async {
+      final client = MockClient(
+        (_) async => http.Response(
+          '<html><body>Bad Gateway</body></html>',
+          500,
+          headers: {'content-type': 'text/html'},
+        ),
+      );
+
+      final service = RouteService(client: client);
+
+      await expectLater(
+        service.getRoadRoute([
+          {'lat': 38.5, 'lng': -120.2},
+          {'lat': 43.252, 'lng': -126.453},
+        ]),
+        throwsA(
+          isA<ApiException>().having(
+            (e) => e.message,
+            'message',
+            'No se pudo calcular la ruta (código 500).',
           ),
-          throwsA(isA<DirectionsApiKeyMissingException>()),
-        );
-        expect(called, isFalse);
-      },
-    );
+        ),
+      );
+    });
+
+    test('un timeout muestra el mensaje de espera', () async {
+      final client = MockClient(
+        (_) async => throw TimeoutException('simulado'),
+      );
+
+      final service = RouteService(client: client);
+
+      await expectLater(
+        service.getRoadRoute([
+          {'lat': 38.5, 'lng': -120.2},
+          {'lat': 43.252, 'lng': -126.453},
+        ]),
+        throwsA(
+          isA<ApiException>().having(
+            (e) => e.message,
+            'message',
+            'El servidor tardó demasiado.',
+          ),
+        ),
+      );
+    });
+
+    test('menos de 2 puntos lanza ApiException sin llamar a la red', () async {
+      var called = false;
+      final client = MockClient((_) async {
+        called = true;
+        return _okResponse();
+      });
+
+      final service = RouteService(client: client);
+
+      await expectLater(
+        service.getRoadRoute(const []),
+        throwsA(isA<ApiException>()),
+      );
+      await expectLater(
+        service.getRoadRoute([
+          {'lat': 38.5, 'lng': -120.2},
+        ]),
+        throwsA(isA<ApiException>()),
+      );
+      expect(called, isFalse);
+    });
+  });
+
+  group('RouteService.getDirections', () {
+    test('mantiene la firma de origen/destino y usa OSRM', () async {
+      http.Request? captured;
+      final client = MockClient((request) async {
+        captured = request;
+        return _okResponse();
+      });
+
+      final service = RouteService(client: client);
+      final points = await service.getDirections(
+        originLat: 38.5,
+        originLng: -120.2,
+        destLat: 43.252,
+        destLng: -126.453,
+      );
+
+      expect(captured, isNotNull);
+      expect(
+        captured!.url.path,
+        '/route/v1/driving/-120.200000,38.500000;-126.453000,43.252000',
+      );
+      expect(points, hasLength(3));
+      expect(points.first['lat'], closeTo(38.5, 1e-6));
+      expect(points.first['lng'], closeTo(-120.2, 1e-6));
+    });
   });
 }

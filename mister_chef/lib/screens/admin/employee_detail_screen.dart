@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import '../../config/app_colors.dart';
 import '../../config/constants.dart';
 import '../../services/employee_service.dart';
+import '../../services/customer_service.dart';
 import '../../services/api_service.dart';
 import 'create_employee_screen.dart';
 
@@ -21,6 +22,7 @@ class EmployeeDetailScreen extends StatefulWidget {
 
 class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
   final _employeeService = EmployeeService();
+  final _customerService = CustomerService();
 
   Map<String, dynamic>? _employee;
   bool _isLoading = true;
@@ -54,9 +56,54 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
   bool get _isAdmin =>
       _employee?['type']?.toString() == AppConstants.roleAdministrador;
 
+  /// Cuenta los clientes asignados al vendedor actual.
+  ///
+  /// Para el administrador el listado de clientes trae todos, así que basta
+  /// con filtrar por documento. Si la consulta falla, devuelve `null` para
+  /// mostrar el diálogo sin el número sin bloquear la desactivación.
+  Future<int?> _countAssignedClients() async {
+    try {
+      final clients = await _customerService.getClients();
+      final doc = widget.employeeDoc;
+      return clients
+          .where((client) => client['document_employee']?.toString() == doc)
+          .length;
+    } catch (_) {
+      return null;
+    }
+  }
+
   Future<void> _toggleStatus() async {
-    final newStatus = _isActive ? 'I' : 'A';
+    final wasActive = _isActive;
+    final wasAdmin = _isAdmin;
+    final isSellerDeactivation = wasActive && !wasAdmin;
+    final newStatus = wasActive ? 'I' : 'A';
+
+    // El número de clientes es informativo: si falla, el diálogo sigue.
+    final assignedClients =
+        isSellerDeactivation ? await _countAssignedClients() : null;
+    if (!mounted) return;
+
     final cs = AppColorScheme.of(context);
+
+    final String content;
+    if (isSellerDeactivation) {
+      final countText = assignedClients == null
+          ? 'Sus clientes quedarán sin asignar'
+          : 'Sus $assignedClients clientes quedarán sin asignar';
+      content =
+          '¿Desactivar a ${widget.employeeName}?\n\n'
+          '$countText, perderá sus rutas y su sesión se cerrará.';
+    } else if (wasActive) {
+      content =
+          '¿Desactivar a ${widget.employeeName}? Ya no podrá iniciar sesión.';
+    } else if (!wasAdmin) {
+      content =
+          '¿Activar a ${widget.employeeName}?\n\n'
+          'Reactivar no le devuelve sus clientes ni sus rutas.';
+    } else {
+      content = '¿Activar a ${widget.employeeName}?';
+    }
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -64,14 +111,15 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
         backgroundColor: cs.card,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
-          _isActive ? 'Desactivar empleado' : 'Activar empleado',
-          style: TextStyle(fontSize: 16,
-              fontWeight: FontWeight.w500, color: cs.textPrimary),
+          wasActive ? 'Desactivar empleado' : 'Activar empleado',
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
+            color: cs.textPrimary,
+          ),
         ),
         content: Text(
-          _isActive
-              ? '¿Desactivar a ${widget.employeeName}? Ya no podrá iniciar sesión.'
-              : '¿Activar a ${widget.employeeName}?',
+          content,
           style: TextStyle(fontSize: 13, color: cs.textSec),
         ),
         actions: [
@@ -82,27 +130,51 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
           ElevatedButton(
             onPressed: () => Navigator.pop(context, true),
             style: ElevatedButton.styleFrom(
-              backgroundColor: _isActive
-                  ? AppColors.statusError
-                  : AppColors.statusSuccess,
+              backgroundColor:
+                  wasActive ? AppColors.statusError : AppColors.statusSuccess,
               foregroundColor: Colors.white,
               shape: RoundedRectangleBorder(
-                  borderRadius: BorderRadius.circular(8)),
+                borderRadius: BorderRadius.circular(8),
+              ),
               elevation: 0,
             ),
-            child: Text(_isActive ? 'Desactivar' : 'Activar'),
+            child: Text(wasActive ? 'Desactivar' : 'Activar'),
           ),
         ],
       ),
     );
 
-    if (confirmed != true) return;
+    if (confirmed != true || !mounted) return;
 
     try {
-      await _employeeService.changeStatus(widget.employeeDoc, newStatus);
-      _showMsg(_isActive
-          ? 'Empleado desactivado correctamente'
-          : 'Empleado activado correctamente');
+      final result = await _employeeService.changeStatus(
+        widget.employeeDoc,
+        newStatus,
+      );
+      if (!mounted) return;
+
+      if (isSellerDeactivation) {
+        final rawReleased = result['released'];
+        final released = rawReleased is Map
+            ? Map<String, dynamic>.from(rawReleased)
+            : null;
+        if (released != null) {
+          final clients = released['clients'] ?? 0;
+          final routes = released['routes'] ?? 0;
+          _showMsg(
+            'Vendedor desactivado. Quedaron sin asignar $clients clientes '
+            'y se eliminaron $routes rutas.',
+          );
+        } else {
+          _showMsg('Vendedor desactivado correctamente');
+        }
+      } else {
+        _showMsg(
+          wasActive
+              ? 'Empleado desactivado correctamente'
+              : 'Empleado activado correctamente',
+        );
+      }
       await _loadData();
     } on ApiException catch (e) {
       _showMsg(e.message, isError: true);
@@ -112,12 +184,15 @@ class _EmployeeDetailScreenState extends State<EmployeeDetailScreen> {
   }
 
   void _showMsg(String msg, {bool isError = false}) {
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-      content: Text(msg),
-      backgroundColor:
-          isError ? AppColors.statusError : AppColors.statusSuccess,
-      behavior: SnackBarBehavior.floating,
-    ));
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(msg),
+        backgroundColor:
+            isError ? AppColors.statusError : AppColors.statusSuccess,
+        behavior: SnackBarBehavior.floating,
+      ),
+    );
   }
 
   @override

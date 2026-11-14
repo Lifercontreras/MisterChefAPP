@@ -7,52 +7,39 @@ import 'package:http/http.dart' as http;
 import '../config/constants.dart';
 import 'api_service.dart';
 
-/// Error controlado cuando falta la clave de Google Directions.
-///
-/// Permite a la interfaz mostrar un mensaje claro en lugar de fallar en
-/// silencio cuando el build no define `DIRECTIONS_API_KEY`.
-class DirectionsApiKeyMissingException implements Exception {
-  const DirectionsApiKeyMissingException();
-
-  @override
-  String toString() =>
-      'Falta DIRECTIONS_API_KEY. Compila con '
-      '--dart-define=DIRECTIONS_API_KEY=... o '
-      '--dart-define-from-file=env/prod.json';
-}
-
 /// Servicio de gestión de rutas de entrega en Mister Chef.
 ///
 /// Cubre tres áreas:
 /// - **Paradas del vendedor**: obtener, actualizar estado y eliminar paradas.
-/// - **Administración**: distribuir rutas entre vendedores, aprobar/rechazar
-///   sugerencias y ver ubicaciones activas en tiempo real.
-/// - **Google Maps**: calcular y decodificar polilíneas de navegación
-///   usando la API de Routes de Google.
+/// - **Administración**: previsualizar y aplicar la redistribución de clientes
+///   entre vendedores, y ver ubicaciones activas en tiempo real.
+/// - **Rutas en carretera**: calcular y decodificar polilíneas de navegación
+///   con el servidor público OSRM de OpenStreetMap, sin clave de API.
+///
+/// OSRM es gratuito para uso razonable y no comercial, pero no garantiza
+/// disponibilidad y limita las peticiones a una por segundo. El servicio
+/// identifica el tráfico de la app con [_userAgent]; la interfaz muestra la
+/// atribución «Rutas © OpenStreetMap · OSRM».
 class RouteService {
   /// Crea el servicio.
   ///
-  /// [client] y [apiKey] son opcionales y existen para las pruebas: la app
-  /// los omite y se usan un `http.Client()` nuevo y
-  /// [AppConstants.directionsApiKey].
-  RouteService({http.Client? client, String? apiKey})
-    : _client = client ?? http.Client(),
-      _apiKey = apiKey ?? AppConstants.directionsApiKey;
+  /// [client] es opcional y existe para las pruebas: la app lo omite y se
+  /// usa un `http.Client()` nuevo.
+  RouteService({http.Client? client}) : _client = client ?? http.Client();
 
-  static const String _routesEndpoint =
-      'https://routes.googleapis.com/directions/v2:computeRoutes';
+  /// URL base del servidor público de OSRM (perfil de conducción).
+  static const String _osrmBaseUrl =
+      'https://router.project-osrm.org/route/v1/driving';
 
-  static const String _routesFieldMask =
-      'routes.polyline.encodedPolyline,'
-      'routes.distanceMeters,'
-      'routes.duration';
+  /// Identificación que exige la política de uso del servidor público.
+  static const String _userAgent =
+      'LogiGo-MisterChef/0.1 (proyecto academico)';
 
   static const String _noRouteMessage =
       'No se encontró una ruta entre el origen y el destino.';
 
   final _api = ApiService();
   final http.Client _client;
-  final String _apiKey;
 
   /// Obtiene las paradas de entrega asignadas al vendedor para el día.
   ///
@@ -106,25 +93,30 @@ class RouteService {
     return Map<String, dynamic>.from(res);
   }
 
-  /// Distribuye automáticamente las rutas del día entre los vendedores activos.
+  /// Calcula la vista previa de la redistribución TOTAL de clientes.
   ///
-  /// Solo disponible para administradores. El servidor asigna clientes
-  /// a cada vendedor según su zona y carga de trabajo.
-  Future<Map<String, dynamic>> distributeRoutes() async {
+  /// Solo disponible para administradores. No escribe nada en el servidor:
+  /// devuelve el reparto propuesto, el resumen y un `fingerprint` que debe
+  /// enviarse a [applyDistribution] para confirmar exactamente ese reparto.
+  Future<Map<String, dynamic>> previewDistribution() async {
     final res = await _api.post(
-      '${AppConstants.endpointRoutes}/distribute',
+      AppConstants.endpointRouteDistributionPreview,
       {},
     );
     return Map<String, dynamic>.from(res);
   }
 
-  /// Obtiene las sugerencias de cambio de ruta enviadas por los vendedores.
+  /// Aplica la redistribución previamente calculada con [fingerprint].
   ///
-  /// Los vendedores pueden proponer modificaciones a su ruta asignada;
-  /// el administrador las aprueba o rechaza desde esta lista.
-  Future<List<Map<String, dynamic>>> getRouteSuggestions() async {
-    final res = await _api.get(AppConstants.endpointRouteSuggestions);
-    return List<Map<String, dynamic>>.from(res);
+  /// Solo disponible para administradores. Si los datos cambiaron desde la
+  /// vista previa, el servidor responde 409 y no escribe nada: hay que
+  /// recalcular con [previewDistribution].
+  Future<Map<String, dynamic>> applyDistribution(String fingerprint) async {
+    final res = await _api.post(
+      AppConstants.endpointRouteDistributionApply,
+      {'fingerprint': fingerprint},
+    );
+    return Map<String, dynamic>.from(res);
   }
 
   /// Obtiene las ubicaciones GPS activas de todos los vendedores.
@@ -136,81 +128,52 @@ class RouteService {
     return List<Map<String, dynamic>>.from(res);
   }
 
-  /// Aprueba una sugerencia de cambio de ruta por su [id].
-  ///
-  /// El servidor reasigna la parada según la sugerencia aprobada.
-  Future<Map<String, dynamic>> approveSuggestion(String id) async {
-    final res = await _api.patch(
-      '${AppConstants.endpointRouteSuggestions}/$id/approve',
-      {},
-    );
-    return Map<String, dynamic>.from(res);
-  }
+  // ── INTEGRACIÓN CON OSRM / OPENSTREETMAP ────────────────────────────────
 
-  /// Rechaza una sugerencia de cambio de ruta por su [id].
+  /// Obtiene la polilínea de la ruta en carretera que une [waypoints].
   ///
-  /// [documentEmployee] identifica al vendedor que hizo la sugerencia
-  /// para notificarle del rechazo.
-  Future<Map<String, dynamic>> rejectSuggestion(
-    String id,
-    String documentEmployee,
+  /// [waypoints] debe traer al menos dos puntos `{lat, lng}` en el orden en
+  /// que se quiere recorrer la ruta. Retorna la geometría decodificada como
+  /// una lista de coordenadas `{lat, lng}` lista para dibujar en el mapa.
+  ///
+  /// Usa el servidor público de OSRM, que recibe las coordenadas como
+  /// `longitud,latitud` separadas por `;`. Lanza [ApiException] si faltan
+  /// puntos, el servidor limita las peticiones (HTTP 429), responde un error
+  /// HTTP, no devuelve una ruta o falla la red.
+  Future<List<Map<String, double>>> getRoadRoute(
+    List<Map<String, double>> waypoints,
   ) async {
-    final res = await _api.patch(
-      '${AppConstants.endpointRouteSuggestions}/$id/reject',
-      {'document_employee': documentEmployee},
-    );
-    return Map<String, dynamic>.from(res);
-  }
-
-  // ── INTEGRACIÓN CON GOOGLE MAPS ─────────────────────────────────────────
-
-  /// Obtiene la polilínea de navegación entre dos puntos usando Google Routes.
-  ///
-  /// Retorna una lista de coordenadas `{lat, lng}` que forman el trazo de la
-  /// ruta en carretera para dibujarla sobre el mapa. Llama a la API de Routes
-  /// (`computeRoutes`) y decodifica la polilínea codificada de la respuesta.
-  ///
-  /// Lanza [DirectionsApiKeyMissingException] si no hay key configurada y
-  /// [ApiException] si Google rechaza la petición, no devuelve rutas o falla
-  /// la red.
-  Future<List<Map<String, double>>> getDirections({
-    required double originLat,
-    required double originLng,
-    required double destLat,
-    required double destLng,
-  }) async {
-    // Fallo controlado y explícito: la UI muestra este mensaje al usuario.
-    if (_apiKey.isEmpty) {
-      throw const DirectionsApiKeyMissingException();
+    if (waypoints.length < 2) {
+      throw ApiException(
+        'Se necesitan al menos dos puntos para calcular la ruta.',
+      );
     }
 
-    final body = jsonEncode({
-      'origin': {
-        'location': {
-          'latLng': {'latitude': originLat, 'longitude': originLng},
-        },
+    // OSRM exige longitud,latitud (al revés que la app) y 6 decimales.
+    final coordinates = waypoints
+        .map(
+          (point) =>
+              '${point['lng']!.toStringAsFixed(6)},'
+              '${point['lat']!.toStringAsFixed(6)}',
+        )
+        .join(';');
+
+    final uri = Uri.parse('$_osrmBaseUrl/$coordinates').replace(
+      queryParameters: {
+        'overview': 'full',
+        'geometries': 'polyline',
       },
-      'destination': {
-        'location': {
-          'latLng': {'latitude': destLat, 'longitude': destLng},
-        },
-      },
-      'travelMode': 'DRIVE',
-      'routingPreference': 'TRAFFIC_UNAWARE',
-      'polylineEncoding': 'ENCODED_POLYLINE',
-    });
+    );
 
     final http.Response res;
     try {
       res = await _client
-          .post(
-            Uri.parse(_routesEndpoint),
+          .get(
+            uri,
             headers: {
-              'Content-Type': 'application/json',
-              'X-Goog-Api-Key': _apiKey,
-              'X-Goog-FieldMask': _routesFieldMask,
+              'Accept': 'application/json',
+              'User-Agent': _userAgent,
             },
-            body: body,
           )
           .timeout(AppConstants.connectTimeout);
     } on TimeoutException {
@@ -221,8 +184,17 @@ class RouteService {
       throw ApiException('Sin conexión a internet.');
     }
 
+    if (res.statusCode == 429) {
+      throw ApiException(
+        'Demasiadas solicitudes de ruta. Intenta de nuevo en unos segundos.',
+        statusCode: 429,
+      );
+    }
     if (res.statusCode != 200) {
-      throw ApiException(_googleErrorMessage(res), statusCode: res.statusCode);
+      throw ApiException(
+        'No se pudo calcular la ruta (código ${res.statusCode}).',
+        statusCode: res.statusCode,
+      );
     }
 
     dynamic decoded;
@@ -232,7 +204,7 @@ class RouteService {
       decoded = null;
     }
 
-    if (decoded is! Map<String, dynamic>) {
+    if (decoded is! Map<String, dynamic> || decoded['code'] != 'Ok') {
       throw ApiException(_noRouteMessage);
     }
 
@@ -242,47 +214,41 @@ class RouteService {
     }
 
     final first = routes.first;
-    final polyline = first is Map ? first['polyline'] : null;
-    final encoded = polyline is Map ? polyline['encodedPolyline'] : null;
+    final encoded = first is Map ? first['geometry'] : null;
 
     if (encoded is! String || encoded.isEmpty) {
       throw ApiException(_noRouteMessage);
     }
 
-    return _decodePolyline(encoded);
-  }
-
-  /// Extrae el mensaje de error de Google sin exponer la API key.
-  ///
-  /// Si el cuerpo no es JSON o no trae `error.message`, devuelve un mensaje
-  /// genérico con el código HTTP.
-  String _googleErrorMessage(http.Response res) {
-    try {
-      final decoded = jsonDecode(res.body);
-      if (decoded is Map<String, dynamic>) {
-        final error = decoded['error'];
-        if (error is Map<String, dynamic>) {
-          final message = error['message']?.toString().trim();
-          final status = error['status']?.toString().trim();
-          if (message != null && message.isNotEmpty) {
-            if (status != null && status.isNotEmpty) {
-              return 'No se pudo calcular la ruta ($status): $message';
-            }
-            return 'No se pudo calcular la ruta: $message';
-          }
-        }
-      }
-    } catch (_) {
-      // El cuerpo no es JSON: se usa el mensaje genérico de abajo.
+    final points = _decodePolyline(encoded);
+    if (points.isEmpty) {
+      throw ApiException(_noRouteMessage);
     }
-    return 'No se pudo calcular la ruta (código ${res.statusCode}).';
+    return points;
   }
 
-  /// Decodifica una polilínea codificada de Google (formato Encoded Polyline).
+  /// Calcula la ruta en carretera entre dos puntos concretos.
   ///
-  /// Algoritmo estándar de Google: interpreta pares de enteros comprimidos
-  /// en base64 modificado para reconstruir coordenadas lat/lng. Es el único
-  /// decodificador del servicio y alimenta directamente el mapa.
+  /// Se mantiene con la misma firma de siempre para no tocar a sus
+  /// llamadores; por dentro delega en [getRoadRoute].
+  Future<List<Map<String, double>>> getDirections({
+    required double originLat,
+    required double originLng,
+    required double destLat,
+    required double destLng,
+  }) {
+    return getRoadRoute([
+      {'lat': originLat, 'lng': originLng},
+      {'lat': destLat, 'lng': destLng},
+    ]);
+  }
+
+  /// Decodifica una polilínea en formato Encoded Polyline (precisión 5).
+  ///
+  /// Es el formato que devuelve OSRM con `geometries=polyline`: pares de
+  /// enteros comprimidos en base64 modificado que reconstruyen coordenadas
+  /// lat/lng. Si la cadena está truncada, devuelve los puntos completos que
+  /// haya podido reconstruir para no romper el mapa.
   List<Map<String, double>> _decodePolyline(String encoded) {
     final List<Map<String, double>> points = [];
     int index = 0;
@@ -292,6 +258,7 @@ class RouteService {
       // Decodifica la latitud.
       int shift = 0, result = 0, b;
       do {
+        if (index >= encoded.length) return points;
         b = encoded.codeUnitAt(index++) - 63;
         result |= (b & 0x1F) << shift;
         shift += 5;
@@ -302,6 +269,7 @@ class RouteService {
       shift = 0;
       result = 0;
       do {
+        if (index >= encoded.length) return points;
         b = encoded.codeUnitAt(index++) - 63;
         result |= (b & 0x1F) << shift;
         shift += 5;

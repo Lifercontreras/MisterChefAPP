@@ -27,9 +27,10 @@ enum TrackingStatus {
 ///
 /// Abre un único stream de posiciones con [AndroidSettings] para que Android
 /// lo ejecute como servicio en primer plano con notificación persistente.
-/// Cada posición se envía a la API como máximo cada 25 segundos; los fallos
-/// de red no cierran el stream, solo marcan [TrackingStatus.errorRed] y el
-/// siguiente envío permitido reintenta.
+/// Cada posición se envía a la API como máximo cada 8 segundos; los fallos
+/// de red no cierran el stream, solo marcan [TrackingStatus.errorRed] (salvo
+/// un 429, que se ignora en silencio) y el siguiente envío permitido
+/// reintenta.
 ///
 /// Es un [ChangeNotifier] para que la UI pueda observar el estado sin
 /// agregar dependencias nuevas.
@@ -152,11 +153,9 @@ class TrackingService extends ChangeNotifier {
       return AndroidSettings(
         accuracy: LocationAccuracy.high,
         distanceFilter: 0,
-        intervalDuration: const Duration(
-          seconds: AppConstants.locationIntervalSeconds,
-        ),
+        intervalDuration: AppConstants.locationUpdateInterval,
         foregroundNotificationConfig: const ForegroundNotificationConfig(
-          notificationTitle: 'Mister Chef',
+          notificationTitle: 'LogiGo',
           notificationText: 'Compartiendo tu ubicación con la central',
           enableWakeLock: true,
           setOngoing: true,
@@ -197,6 +196,10 @@ class TrackingService extends ChangeNotifier {
         _updateStatus(TrackingStatus.sinPermiso, error: e.message);
         return;
       }
+
+      // 429: la API limita la frecuencia de envíos. No es un error visible:
+      // se mantiene el stream y el siguiente evento vuelve a intentarlo.
+      if (e.statusCode == 429) return;
 
       // Cualquier otro error del servidor: mantener el stream y reintentar
       // en el próximo envío permitido.

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
 import '../../config/app_colors.dart';
+import '../../config/constants.dart';
 import '../../services/customer_service.dart';
 import '../../services/employee_service.dart';
 import '../../services/location_service.dart';
@@ -40,6 +41,7 @@ class _CreateCustomerScreenState extends State<CreateCustomerScreen> {
   String? _selectedEmployee;
   String? _selectedDepartment;
   String? _selectedCity;
+  bool _previousSellerInactive = false;
   bool _isSaving     = false;
   bool _isLoading    = true;
   bool _isGettingGps = false;
@@ -63,7 +65,13 @@ class _CreateCustomerScreenState extends State<CreateCustomerScreen> {
 
       List<Map<String, dynamic>> employees = [];
       if (_userRole == 'A') {
-        employees = await _employeeService.getEmployees();
+        final all = await _employeeService.getEmployees();
+        // Solo vendedores activos: ni administradores ni inactivos.
+        employees = all
+            .where((e) =>
+                e['type']?.toString() == AppConstants.roleVendedor &&
+                e['status']?.toString().toUpperCase() == 'A')
+            .toList();
       } else {
         _selectedEmployee = _userDoc;
       }
@@ -96,7 +104,25 @@ class _CreateCustomerScreenState extends State<CreateCustomerScreen> {
     _phoneCtrl.text     = c['phone_number']?.toString() ?? '';
     _latCtrl.text       = c['latitude']?.toString()     ?? '';
     _lngCtrl.text       = c['longitude']?.toString()    ?? '';
-    _selectedEmployee   = c['document_employee']?.toString();
+    final sellerDoc     = c['document_employee']?.toString();
+
+    if (_userRole == 'A') {
+      // Un DropdownButton con un value que no está en items lanza error.
+      // Si el vendedor anterior ya no está activo (o no existe), se inicia
+      // en "Sin asignar" y se avisa al usuario.
+      final isAvailable = sellerDoc != null &&
+          sellerDoc.isNotEmpty &&
+          _employees.any(
+            (e) => e['document_employee']?.toString() == sellerDoc,
+          );
+      _selectedEmployee = isAvailable ? sellerDoc : null;
+      _previousSellerInactive = !isAvailable &&
+          sellerDoc != null &&
+          sellerDoc.isNotEmpty;
+    } else {
+      // El vendedor conserva su propio documento, como antes.
+      _selectedEmployee = sellerDoc;
+    }
 
     // Cargar departamento y ciudad
     final deptId = c['city']?['id_departament']?.toString()
@@ -421,31 +447,46 @@ class _CreateCustomerScreenState extends State<CreateCustomerScreen> {
                         icon: Icons.badge_outlined,
                         cs: cs,
                         children: [
-                          _FieldLabel(label: 'Vendedor *', cs: cs),
+                          _FieldLabel(label: 'Vendedor', cs: cs),
                           const SizedBox(height: 6),
                           DropdownButtonFormField<String>(
                             value: _selectedEmployee,
                             dropdownColor: cs.card,
                             decoration: _dropdownDeco(cs),
-                            hint: Text('Selecciona un vendedor',
+                            hint: Text('Sin asignar',
                                 style: TextStyle(fontSize: 13, color: cs.textHint)),
                             style: TextStyle(fontSize: 13, color: cs.textPrimary),
                             icon: Icon(Icons.keyboard_arrow_down, color: cs.textHint),
-                            items: _employees.map((e) {
-                              final nombre =
-                                  '${e['name_1'] ?? ''} ${e['last_name_1'] ?? ''}'.trim();
-                              final doc = e['document_employee']?.toString() ?? '';
-                              return DropdownMenuItem(
-                                value: doc,
-                                child: Text('$nombre ($doc)',
+                            items: [
+                              DropdownMenuItem<String>(
+                                value: null,
+                                child: Text('Sin asignar',
                                     style: TextStyle(
-                                        fontSize: 13, color: cs.textPrimary)),
-                              );
-                            }).toList(),
+                                        fontSize: 13, color: cs.textHint)),
+                              ),
+                              ..._employees.map((e) {
+                                final nombre =
+                                    '${e['name_1'] ?? ''} ${e['last_name_1'] ?? ''}'.trim();
+                                final doc = e['document_employee']?.toString() ?? '';
+                                return DropdownMenuItem(
+                                  value: doc,
+                                  child: Text('$nombre ($doc)',
+                                      style: TextStyle(
+                                          fontSize: 13, color: cs.textPrimary)),
+                                );
+                              }),
+                            ],
                             onChanged: (v) => setState(() => _selectedEmployee = v),
-                            validator: (v) =>
-                                v == null ? 'Selecciona un vendedor' : null,
                           ),
+                          if (_previousSellerInactive) ...[
+                            const SizedBox(height: 6),
+                            Text(
+                              'El vendedor anterior ya no está activo',
+                              style: TextStyle(
+                                  fontSize: 10,
+                                  color: AppColors.statusWarning),
+                            ),
+                          ],
                         ],
                       ),
                       const SizedBox(height: 14),

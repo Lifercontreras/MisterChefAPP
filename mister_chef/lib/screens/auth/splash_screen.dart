@@ -135,12 +135,20 @@ class _SplashScreenState extends State<SplashScreen>
                           color: Colors.white,
                         ),
                         children: [
-                          TextSpan(text: 'Mister '),
+                          TextSpan(text: 'Logi'),
                           TextSpan(
-                            text: 'Chef',
+                            text: 'Go',
                             style: TextStyle(color: AppColors.accent),
                           ),
                         ],
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'para Mister Chef',
+                      style: TextStyle(
+                        fontSize: 13,
+                        color: Colors.white.withValues(alpha: 0.75),
                       ),
                     ),
                     const SizedBox(height: 6),

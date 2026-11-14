@@ -266,7 +266,7 @@ class AccessibilityScreen extends StatelessWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Text('Mister Chef',
+                  Text('LogiGo',
                       style: TextStyle(
                           fontSize: 18 * accessibility.fontScale,
                           fontWeight: FontWeight.w500,

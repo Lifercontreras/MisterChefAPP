@@ -1,6 +1,6 @@
 {
-    "name": "mister_chef",
-    "short_name": "mister_chef",
+    "name": "LogiGo",
+    "short_name": "LogiGo",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#0175C2",

@@ -1,3 +1,5 @@
+import '../config/constants.dart';
+
 /// Regla pura que decide cuándo se puede enviar una nueva posición GPS
 /// al servidor.
 ///
@@ -8,9 +10,12 @@
 class LocationSendThrottle {
   /// Crea la regla con un intervalo mínimo entre envíos.
   ///
-  /// Por defecto 25 segundos, un margen menor que el intervalo del stream
-  /// (30 s) para no perder posiciones por pequeñas diferencias de reloj.
-  LocationSendThrottle({this.minimumInterval = const Duration(seconds: 25)});
+  /// Por defecto [AppConstants.locationMinSendInterval] (8 s), un margen
+  /// menor que el intervalo del stream ([AppConstants.locationUpdateInterval],
+  /// 10 s) para no perder posiciones por pequeñas diferencias de reloj.
+  LocationSendThrottle({
+    this.minimumInterval = AppConstants.locationMinSendInterval,
+  });
 
   /// Tiempo mínimo que debe transcurrir entre dos envíos exitosos.
   final Duration minimumInterval;

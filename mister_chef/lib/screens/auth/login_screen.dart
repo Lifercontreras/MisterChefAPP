@@ -90,12 +90,19 @@ class _AuthHeader extends StatelessWidget {
                             color: Colors.white,
                           ),
                           children: [
-                            TextSpan(text: 'Mister '),
+                            TextSpan(text: 'Logi'),
                             TextSpan(
-                              text: 'Chef',
+                              text: 'Go',
                               style: TextStyle(color: AppColors.accent),
                             ),
                           ],
+                        ),
+                      ),
+                      Text(
+                        'para Mister Chef',
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: Colors.white.withValues(alpha: 0.75),
                         ),
                       ),
                       Text(

@@ -6,6 +6,7 @@ import '../../config/app_colors.dart';
 import '../../config/app_routes.dart';
 import '../../config/client_map_logic.dart';
 import '../../config/constants.dart';
+import '../../config/location_polling_logic.dart';
 import '../../services/api_service.dart';
 import '../../services/customer_service.dart';
 import '../../services/employee_service.dart';
@@ -19,7 +20,8 @@ class DeliveryMapScreen extends StatefulWidget {
   State<DeliveryMapScreen> createState() => _DeliveryMapScreenState();
 }
 
-class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
+class _DeliveryMapScreenState extends State<DeliveryMapScreen>
+    with WidgetsBindingObserver {
   final Completer<GoogleMapController> _mapController = Completer();
   final _routeService = RouteService();
   final _customerService = CustomerService();
@@ -47,27 +49,79 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
   // ── Evita que una construcción antigua de marcadores pise a una nueva
   int _markersGeneration = 0;
 
-  // ── Refresco automático cada 30 segundos
+  // ── Refresco automático de ubicaciones (solo GET /location)
   Timer? _refreshTimer;
+  bool _locationsRequestInFlight = false;
+  bool _appPaused = false;
 
   @override
   void initState() {
     super.initState();
+    WidgetsBinding.instance.addObserver(this);
     _loadLocations();
     _loadClients();
-    _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
-      _loadLocations();
-    });
+    _startAutoRefresh();
   }
 
   @override
   void dispose() {
-    _refreshTimer?.cancel();
+    WidgetsBinding.instance.removeObserver(this);
+    _stopAutoRefresh();
     super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    if (state == AppLifecycleState.resumed) {
+      _appPaused = false;
+      _refreshLocationsIfIdle();
+      _startAutoRefresh();
+    } else if (state == AppLifecycleState.paused ||
+        state == AppLifecycleState.inactive) {
+      _appPaused = true;
+      _stopAutoRefresh();
+    }
+  }
+
+  void _startAutoRefresh() {
+    _stopAutoRefresh();
+    _refreshTimer = Timer.periodic(
+      AppConstants.locationUpdateInterval,
+      (_) => _refreshLocationsIfIdle(),
+    );
+  }
+
+  void _stopAutoRefresh() {
+    _refreshTimer?.cancel();
+    _refreshTimer = null;
+  }
+
+  /// Refresca solo las ubicaciones si no hay una petición en vuelo y la app
+  /// está visible. Los clientes nunca entran al polling automático.
+  void _refreshLocationsIfIdle() {
+    if (!shouldRunLocationPoll(
+      requestInFlight: _locationsRequestInFlight,
+      appPaused: _appPaused,
+    )) {
+      return;
+    }
+    _loadLocations();
   }
 
   // ── GET /api/v1/location
   Future<void> _loadLocations() async {
+    // No solapa peticiones: si la anterior sigue en vuelo, se espera al
+    // siguiente ciclo (o al siguiente refresco manual).
+    if (_locationsRequestInFlight) return;
+    _locationsRequestInFlight = true;
+    try {
+      await _fetchLocations();
+    } finally {
+      _locationsRequestInFlight = false;
+    }
+  }
+
+  Future<void> _fetchLocations() async {
     try {
       final data = await _routeService.getActiveLocations();
       if (!mounted) return;
@@ -664,7 +718,7 @@ class _DeliveryMapScreenState extends State<DeliveryMapScreen> {
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        'Actualización automática cada 30 segundos',
+                        'Actualización automática cada ${AppConstants.locationUpdateInterval.inSeconds} segundos',
                         style: TextStyle(
                           fontSize: 11,
                           color: AppColors.textHintLight.withValues(alpha: 0.8),

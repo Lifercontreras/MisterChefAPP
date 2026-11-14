@@ -3,6 +3,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../../config/app_colors.dart';
 import '../../config/constants.dart';
 import '../../services/customer_service.dart';
+import '../../services/api_service.dart';
 import '../../services/auth_service.dart'; // ← agregado
 import '../orders/new_order_screen.dart';
 import 'create_customer_screen.dart';
@@ -135,13 +136,69 @@ class _CustomerDetailScreenState extends State<CustomerDetailScreen> {
             isError: true);
         return;
       }
+
+      final empresa = (_client?['business_name'] ?? '').toString().trim();
+      final nombre = (_client?['client_name1'] ?? '').toString().trim();
+      final displayName = empresa.isNotEmpty
+          ? empresa
+          : (nombre.isNotEmpty ? nombre : widget.customerName);
+
+      final cs = AppColorScheme.of(context);
+      final confirmed = await showDialog<bool>(
+        context: context,
+        builder: (_) => AlertDialog(
+          backgroundColor: cs.card,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          title: Text(
+            'Desactivar cliente',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w500,
+              color: cs.textPrimary,
+            ),
+          ),
+          content: Text(
+            '¿Desactivar a $displayName? Dejará de aparecer en la ruta de su '
+            'vendedor. Al reactivarlo volverá a su ruta si el vendedor sigue '
+            'activo.',
+            style: TextStyle(fontSize: 13, color: cs.textSec),
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, false),
+              child: Text('Cancelar', style: TextStyle(color: cs.textHint)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: AppColors.statusError,
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(8),
+                ),
+                elevation: 0,
+              ),
+              child: const Text('Desactivar'),
+            ),
+          ],
+        ),
+      );
+
+      if (confirmed != true || !mounted) return;
     }
 
     try {
       await _customerService.changeClientStatus(id, !active);
+      if (!mounted) return;
       _showMsg(active ? 'Cliente desactivado' : 'Cliente activado');
       await _loadData();
+    } on ApiException catch (e) {
+      if (!mounted) return;
+      _showMsg(e.message, isError: true);
     } catch (_) {
+      if (!mounted) return;
       _showMsg('Error al cambiar el estado.', isError: true);
     }
   }

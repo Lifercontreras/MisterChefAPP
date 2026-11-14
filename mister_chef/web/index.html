@@ -2,10 +2,12 @@
 <html>
   <!--
     La app está pensada para Android. Este script solo es necesario si alguna
-    vez se compila la versión web: reemplaza TU_DIRECTIONS_API_KEY por una
-    clave real en local antes de compilar. No se versionan claves.
+    vez se compila la versión web: reemplaza TU_MAPS_API_KEY por la clave real
+    del SDK/JS de Google Maps en local antes de compilar. No se versionan
+    claves. Las rutas por carretera usan OSRM (OpenStreetMap) y no necesitan
+    clave.
   -->
-  <!-- <script src="https://maps.googleapis.com/maps/api/js?key=TU_DIRECTIONS_API_KEY"></script> -->
+  <!-- <script src="https://maps.googleapis.com/maps/api/js?key=TU_MAPS_API_KEY"></script> -->
 
 <head>
   <!--
@@ -30,13 +32,13 @@
   <!-- iOS meta tags & icons -->
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black">
-  <meta name="apple-mobile-web-app-title" content="mister_chef">
+  <meta name="apple-mobile-web-app-title" content="LogiGo">
   <link rel="apple-touch-icon" href="icons/Icon-192.png">
 
   <!-- Favicon -->
   <link rel="icon" type="image/png" href="favicon.png"/>
 
-  <title>mister_chef</title>
+  <title>LogiGo</title>
   <link rel="manifest" href="manifest.json">
 </head>
 <body>

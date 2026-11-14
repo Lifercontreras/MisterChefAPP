@@ -112,7 +112,7 @@ class MisterChefApp extends StatelessWidget {
     final accessibility = context.watch<AccessibilityProvider>();
 
     return MaterialApp(
-      title: 'Mister Chef',
+      title: 'LogiGo',
       debugShowCheckedModeBanner: false,
 
       // Permiten navegar y mostrar avisos desde ApiService (401 global).
